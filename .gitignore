@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Environment (токен бота не коммитить)
+.env
+.env.local
+.env.*.local
+
+# Данные бота (настройки гильдий)
+data/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+.nyc_output/
