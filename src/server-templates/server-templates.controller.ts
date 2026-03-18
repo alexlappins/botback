@@ -51,17 +51,27 @@ export class ServerTemplatesController {
   async list() {
     return this.templateRepo.find({
       order: { createdAt: 'DESC' },
-      select: ['id', 'name', 'description', 'createdAt'],
+      select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt'],
     });
   }
 
   @Post()
-  async create(@Body() body: { name: string; description?: string | null }) {
+  async create(@Body() body: { name: string; description?: string | null; discordTemplateUrl?: string | null }) {
     const name = body?.name?.trim();
     if (!name) throw new BadRequestException('name required');
-    const template = this.templateRepo.create({ name, description: body.description?.trim() || null });
+    const template = this.templateRepo.create({
+      name,
+      description: body.description?.trim() || null,
+      discordTemplateUrl: body.discordTemplateUrl?.trim() || null,
+    });
     await this.templateRepo.save(template);
-    return { id: template.id, name: template.name, description: template.description, createdAt: template.createdAt };
+    return {
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      discordTemplateUrl: template.discordTemplateUrl,
+      createdAt: template.createdAt,
+    };
   }
 
   @Get(':id')
@@ -81,15 +91,26 @@ export class ServerTemplatesController {
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() body: { name?: string; description?: string | null }) {
+  async update(
+    @Param('id') id: string,
+    @Body() body: { name?: string; description?: string | null; discordTemplateUrl?: string | null },
+  ) {
     await this.ensureTemplate(id);
     if (body.name !== undefined) {
       const name = body.name?.trim();
       if (!name) throw new BadRequestException('name cannot be empty');
       await this.templateRepo.update(id, { name });
     }
-    if (body.description !== undefined) await this.templateRepo.update(id, { description: body.description?.trim() || null });
-    return this.templateRepo.findOne({ where: { id }, select: ['id', 'name', 'description', 'createdAt', 'updatedAt'] });
+    if (body.description !== undefined) {
+      await this.templateRepo.update(id, { description: body.description?.trim() || null });
+    }
+    if (body.discordTemplateUrl !== undefined) {
+      await this.templateRepo.update(id, { discordTemplateUrl: body.discordTemplateUrl?.trim() || null });
+    }
+    return this.templateRepo.findOne({
+      where: { id },
+      select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt', 'updatedAt'],
+    });
   }
 
   @Delete(':id')

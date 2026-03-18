@@ -24,6 +24,10 @@ export class ServerTemplate {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
+  /** Ссылка на шаблон сервера Discord (опционально). Например: https://discord.new/... */
+  @Column({ name: 'discord_template_url', type: 'varchar', length: 512, nullable: true })
+  discordTemplateUrl: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
