@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request, Response } from 'express';
 import { SessionGuard } from './session.guard';
+import type { SessionUser } from './session.serializer';
 
 @Controller('api/auth')
 export class AuthController {
@@ -20,9 +21,6 @@ export class AuthController {
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:5173');
     const session = req.session as { save: (cb: (err?: Error) => void) => void };
 
-    console.log('callback user:', req.user);
-    console.log('before login sessionID:', req.sessionID);
-
     req.logIn(req.user as Express.User, (loginErr) => {
       if (loginErr) {
         console.error('req.logIn error:', loginErr);
@@ -35,7 +33,6 @@ export class AuthController {
           return res.status(500).json({ error: 'Session save failed' });
         }
 
-        console.log('after login sessionID:', req.sessionID);
         return res.redirect(frontendUrl);
       });
     });
@@ -44,10 +41,14 @@ export class AuthController {
   @Get('me')
   @UseGuards(SessionGuard)
   me(@Req() req: Request) {
-    console.log('me user:', req.user);
-    console.log('me session:', req.session);
-    console.log('me cookie header:', req.headers.cookie);
-    return (req as Request & { user: unknown }).user;
+    const user = (req as Request & { user: SessionUser }).user;
+    return {
+      id: user.id,
+      username: user.username,
+      avatar: user.avatar,
+      discriminator: user.discriminator,
+      role: user.role,
+    };
   }
 
   @Get('logout')

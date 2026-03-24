@@ -11,13 +11,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import type { Request } from 'express';
+import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
 import type { LogChannelsConfig } from '../common/storage/guild-storage.service';
 import { GuildStorageService } from '../common/storage/guild-storage.service';
 import { LogEventsService } from '../logs/log-events.service';
+import { UserTemplateAccess } from '../server-templates/entities/user-template-access.entity';
 import { TemplateInstallService } from '../server-templates/template-install.service';
+import { Repository } from 'typeorm';
 import { GuildsService } from './guilds.service';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
@@ -29,13 +33,15 @@ const LOG_TYPES: (keyof LogChannelsConfig)[] = [
 ];
 
 @Controller('api/guilds')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CustomerGuard)
 export class GuildsController {
   constructor(
     private readonly guilds: GuildsService,
     private readonly storage: GuildStorageService,
     private readonly logEvents: LogEventsService,
     private readonly templateInstall: TemplateInstallService,
+    @InjectRepository(UserTemplateAccess)
+    private readonly accessRepo: Repository<UserTemplateAccess>,
   ) {}
 
   private getUser(req: Request): SessionUser {
@@ -169,8 +175,37 @@ export class GuildsController {
   ) {
     await this.ensureGuildAccess(guildId, req);
     if (!body?.templateId) throw new BadRequestException('templateId required');
+    const user = this.getUser(req);
+    if (user.role !== 'admin') {
+      const access = await this.accessRepo.findOne({
+        where: { userId: user.id, templateId: body.templateId },
+      });
+      if (!access) {
+        throw new BadRequestException('No access to this template');
+      }
+    }
     const result = await this.templateInstall.install(guildId, body.templateId);
-    if ('error' in result) throw new BadRequestException(result.error);
+    if (!result.ok) throw new BadRequestException(result.error);
+    return result;
+  }
+
+  @Post(':id/install-template/check')
+  async installTemplateCheck(
+    @Param('id') guildId: string,
+    @Body() body: { templateId: string },
+    @Req() req: Request,
+  ) {
+    await this.ensureGuildAccess(guildId, req);
+    if (!body?.templateId) throw new BadRequestException('templateId required');
+    const user = this.getUser(req);
+    if (user.role !== 'admin') {
+      const access = await this.accessRepo.findOne({
+        where: { userId: user.id, templateId: body.templateId },
+      });
+      if (!access) throw new BadRequestException('No access to this template');
+    }
+    const result = await this.templateInstall.check(guildId, body.templateId);
+    if (!result.ok) throw new BadRequestException(result.error);
     return result;
   }
 

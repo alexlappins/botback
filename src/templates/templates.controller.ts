@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
 import { GuildsService } from '../dashboard/guilds.service';
@@ -22,7 +23,7 @@ import {
 } from './templates.service';
 
 @Controller('api/guilds/:guildId/templates')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CustomerGuard)
 export class TemplatesController {
   constructor(
     private readonly templates: TemplatesService,

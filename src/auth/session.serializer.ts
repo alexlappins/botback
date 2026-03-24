@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PassportSerializer } from '@nestjs/passport';
+import type { UserRole } from './user-role';
 
 export interface SessionUser {
   id: string;
@@ -7,6 +8,7 @@ export interface SessionUser {
   avatar: string | null;
   discriminator: string;
   accessToken: string;
+  role: UserRole;
 }
 
 @Injectable()

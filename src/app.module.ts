@@ -12,6 +12,7 @@ import { LogsModule } from './logs/logs.module';
 import { MessageConstructorModule } from './message-constructor/message-constructor.module';
 import { ReactionRolesModule } from './reaction-roles/reaction-roles.module';
 import { ServerTemplatesModule } from './server-templates/server-templates.module';
+import { StoreModule } from './store/store.module';
 import { TemplatesModule } from './templates/templates.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { TemplatesModule } from './templates/templates.module';
     AuthModule,
     DashboardModule,
     ServerTemplatesModule,
+    StoreModule,
     TemplatesModule,
     MessageConstructorModule,
     ReactionRolesModule,

@@ -11,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { AdminGuard } from '../auth/admin.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { LogChannelsConfig } from '../common/storage/guild-storage.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -28,7 +29,7 @@ import { NoCacheInterceptor } from './no-cache.interceptor';
 const LOG_TYPES: (keyof LogChannelsConfig)[] = ['joinLeave', 'messages', 'moderation', 'channel', 'banKick'];
 
 @Controller('api/server-templates')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, AdminGuard)
 @UseInterceptors(NoCacheInterceptor)
 export class ServerTemplatesController {
   constructor(
