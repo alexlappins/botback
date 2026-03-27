@@ -274,7 +274,7 @@ export class TemplateInstallService {
         }
 
         const embed = msg.embedJson
-          ? this.buildEmbed(msg.embedJson, roleIdByName)
+          ? this.buildEmbed(msg.embedJson as Record<string, unknown>, roleIdByName)
           : undefined;
         const components = msg.componentsJson
           ? this.buildComponents(msg.componentsJson, roleIdByName)
@@ -363,12 +363,113 @@ export class TemplateInstallService {
     });
   }
 
-  private buildEmbed(data: Record<string, unknown>, roleMap: Map<string, string>): EmbedBuilder {
+  /**
+   * Собирает Discord Embed из JSON (как в Discord API / ProBot-подобные конструкторы).
+   * Поддерживается:
+   * - корневой объект embed ИЛИ обёртка `{ embeds: [ { ... } ] }`
+   * - title, description, url, color (#RRGGBB или число), timestamp
+   * - author: { name, url, icon_url | iconURL }
+   * - footer: { text, icon_url | iconURL }
+   * - image / thumbnail: строка URL или { url }
+   * - fields: [ { name, value, inline } ] (до 25)
+   * Плейсхолдеры {{RoleName}} в текстах заменяются на id роли из шаблона.
+   */
+  private buildEmbed(data: Record<string, unknown>, roleMap: Map<string, string>): EmbedBuilder | undefined {
+    const raw = unwrapEmbedPayload(data);
+    if (!raw) return undefined;
+
     const embed = new EmbedBuilder();
-    if (typeof data.title === 'string') embed.setTitle(this.replaceRolePlaceholders(data.title, roleMap));
-    if (typeof data.description === 'string') embed.setDescription(this.replaceRolePlaceholders(data.description, roleMap));
-    if (typeof data.color === 'number') embed.setColor(data.color);
-    if (typeof data.image === 'string') embed.setImage(data.image);
+    let hasContent = false;
+
+    if (typeof raw.title === 'string' && raw.title.trim()) {
+      embed.setTitle(this.replaceRolePlaceholders(raw.title, roleMap));
+      hasContent = true;
+    }
+    if (typeof raw.url === 'string' && raw.url.trim()) {
+      embed.setURL(raw.url.trim());
+    }
+    if (typeof raw.description === 'string' && raw.description.length) {
+      embed.setDescription(this.replaceRolePlaceholders(raw.description, roleMap));
+      hasContent = true;
+    }
+
+    const color = parseEmbedColor(raw.color);
+    if (color !== undefined) {
+      embed.setColor(color);
+      hasContent = true;
+    }
+
+    if (raw.author && typeof raw.author === 'object') {
+      const a = raw.author as Record<string, unknown>;
+      const name =
+        typeof a.name === 'string' ? this.replaceRolePlaceholders(a.name, roleMap).trim() : '';
+      if (name) {
+        const iconUrl = pickString(a, 'icon_url', 'iconURL');
+        const url = typeof a.url === 'string' ? a.url.trim() : undefined;
+        embed.setAuthor({ name, iconURL: iconUrl, url });
+        hasContent = true;
+      }
+    }
+
+    if (raw.footer && typeof raw.footer === 'object') {
+      const f = raw.footer as Record<string, unknown>;
+      const text =
+        typeof f.text === 'string' ? this.replaceRolePlaceholders(f.text, roleMap).trim() : '';
+      if (text) {
+        const iconUrl = pickString(f, 'icon_url', 'iconURL');
+        embed.setFooter({ text, iconURL: iconUrl });
+        hasContent = true;
+      }
+    }
+
+    const thumbUrl = resolveMediaUrl(raw.thumbnail);
+    if (thumbUrl) {
+      embed.setThumbnail(thumbUrl);
+      hasContent = true;
+    }
+
+    const imageUrl = resolveMediaUrl(raw.image);
+    if (imageUrl) {
+      embed.setImage(imageUrl);
+      hasContent = true;
+    }
+
+    if (Array.isArray(raw.fields) && raw.fields.length) {
+      const fields = raw.fields
+        .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+        .slice(0, 25)
+        .map((f) => ({
+          name:
+            typeof f.name === 'string'
+              ? this.replaceRolePlaceholders(f.name, roleMap).trim() || '\u200b'
+              : '\u200b',
+          value:
+            typeof f.value === 'string'
+              ? this.replaceRolePlaceholders(f.value, roleMap)
+              : '\u200b',
+          inline: Boolean(f.inline),
+        }));
+      if (fields.length) {
+        embed.addFields(fields);
+        hasContent = true;
+      }
+    }
+
+    if (raw.timestamp !== undefined && raw.timestamp !== null) {
+      const t = raw.timestamp;
+      if (typeof t === 'number') {
+        embed.setTimestamp(t);
+        hasContent = true;
+      } else if (typeof t === 'string') {
+        const d = new Date(t);
+        if (!Number.isNaN(d.getTime())) {
+          embed.setTimestamp(d);
+          hasContent = true;
+        }
+      }
+    }
+
+    if (!hasContent) return undefined;
     return embed;
   }
 
@@ -412,6 +513,44 @@ export class TemplateInstallService {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Discord webhook payload: `{ embeds: [ {...} ] }` или сразу объект embed. */
+function unwrapEmbedPayload(data: Record<string, unknown>): Record<string, unknown> | null {
+  if (Array.isArray(data.embeds) && data.embeds.length > 0) {
+    const first = data.embeds[0];
+    if (first && typeof first === 'object') return first as Record<string, unknown>;
+  }
+  return data;
+}
+
+function parseEmbedColor(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(s)) {
+      const hex = s.startsWith('#') ? s.slice(1) : s;
+      return parseInt(hex, 16);
+    }
+  }
+  return undefined;
+}
+
+function resolveMediaUrl(v: unknown): string | undefined {
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  if (v && typeof v === 'object') {
+    const url = (v as { url?: unknown }).url;
+    if (typeof url === 'string' && url.trim()) return url.trim();
+  }
+  return undefined;
+}
+
+function pickString(obj: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
 }
 
 function unique(items: string[]): string[] {
