@@ -224,4 +224,32 @@ export class GuildsController {
     });
     return { ok: true };
   }
+
+  /** Тестове відправлення повідомлення шаблону (як при інсталі) у вибраний канал для перегляду. */
+  @Post(':id/preview-template-message')
+  async previewTemplateMessage(
+    @Param('id') guildId: string,
+    @Body()
+    body: {
+      channelId: string;
+      content?: string | null;
+      embedJson?: Record<string, unknown> | null;
+      componentsJson?: unknown[] | null;
+    },
+    @Req() req: Request,
+  ) {
+    await this.ensureGuildAccess(guildId, req);
+    if (!body?.channelId) throw new BadRequestException('channelId required');
+    try {
+      await this.templateInstall.sendTemplatePreviewToChannel(guildId, body.channelId, {
+        content: body.content,
+        embedJson: body.embedJson ?? undefined,
+        componentsJson: body.componentsJson ?? undefined,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Не вдалося відправити';
+      throw new BadRequestException(msg);
+    }
+    return { ok: true };
+  }
 }

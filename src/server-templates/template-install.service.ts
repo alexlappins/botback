@@ -349,6 +349,43 @@ export class TemplateInstallService {
     }
   }
 
+  /**
+   * Відправляє тестове повідомлення в канал (той самий пайплайн, що й при інсталі шаблону).
+   * Плейсхолдери ролей не підставляються (порожня карта).
+   */
+  async sendTemplatePreviewToChannel(
+    guildId: string,
+    channelId: string,
+    payload: {
+      content?: string | null;
+      embedJson?: Record<string, unknown> | null;
+      componentsJson?: unknown[] | null;
+    },
+  ): Promise<void> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) throw new Error('Сервер не знайдено або бот не на сервері');
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel?.isTextBased()) throw new Error('Канал не знайдено або це не текстовий канал');
+
+    const emptyRoleMap = new Map<string, string>();
+    const embed = payload.embedJson
+      ? this.buildEmbed(payload.embedJson, emptyRoleMap)
+      : undefined;
+    const components = payload.componentsJson
+      ? this.buildComponents(payload.componentsJson, emptyRoleMap)
+      : undefined;
+    const content = payload.content?.trim() ? payload.content.trim() : undefined;
+    if (!content && !embed && !components) {
+      throw new Error('Немає що відправити: додайте текст, embed або кнопки');
+    }
+
+    await (channel as import('discord.js').TextChannel).send({
+      content,
+      embeds: embed ? [embed] : undefined,
+      components: components ?? undefined,
+    });
+  }
+
   private loadTemplate(templateId: string): Promise<ServerTemplate | null> {
     return this.templateRepo.findOne({
       where: { id: templateId },

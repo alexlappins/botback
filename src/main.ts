@@ -1,9 +1,16 @@
+import { mkdirSync } from 'fs';
+import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import session from 'express-session';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const uploadsPath = join(process.cwd(), 'uploads');
+  mkdirSync(uploadsPath, { recursive: true });
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useStaticAssets(uploadsPath, { prefix: '/uploads/' });
 
   const secret = process.env.SESSION_SECRET || 'change-me-in-production';
   app.use(

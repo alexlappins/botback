@@ -14,6 +14,7 @@ import { ReactionRolesModule } from './reaction-roles/reaction-roles.module';
 import { ServerTemplatesModule } from './server-templates/server-templates.module';
 import { StoreModule } from './store/store.module';
 import { TemplatesModule } from './templates/templates.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { TemplatesModule } from './templates/templates.module';
     MessageConstructorModule,
     ReactionRolesModule,
     LogsModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],
