@@ -233,8 +233,9 @@ export class GuildsController {
     body: {
       channelId: string;
       content?: string | null;
-      embedJson?: Record<string, unknown> | null;
-      componentsJson?: unknown[] | null;
+      /** Объект или строка JSON */
+      embedJson?: Record<string, unknown> | string | null;
+      componentsJson?: unknown[] | string | null;
     },
     @Req() req: Request,
   ) {

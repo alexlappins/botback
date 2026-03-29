@@ -358,8 +358,9 @@ export class TemplateInstallService {
     channelId: string,
     payload: {
       content?: string | null;
-      embedJson?: Record<string, unknown> | null;
-      componentsJson?: unknown[] | null;
+      /** Объект или строка JSON (как с фронта из textarea) */
+      embedJson?: Record<string, unknown> | string | null;
+      componentsJson?: unknown[] | string | null;
     },
   ): Promise<void> {
     const guild = this.client.guilds.cache.get(guildId);
@@ -368,11 +369,11 @@ export class TemplateInstallService {
     if (!channel?.isTextBased()) throw new Error('Канал не знайдено або це не текстовий канал');
 
     const emptyRoleMap = new Map<string, string>();
-    const embed = payload.embedJson
-      ? this.buildEmbed(payload.embedJson, emptyRoleMap)
-      : undefined;
-    const components = payload.componentsJson
-      ? this.buildComponents(payload.componentsJson, emptyRoleMap)
+    const embedRecord = coerceEmbedJsonField(payload.embedJson);
+    const embed = embedRecord ? this.buildEmbed(embedRecord, emptyRoleMap) : undefined;
+    const componentsPayload = coerceComponentsJsonField(payload.componentsJson);
+    const components = componentsPayload
+      ? this.buildComponents(componentsPayload, emptyRoleMap)
       : undefined;
     const content = payload.content?.trim() ? payload.content.trim() : undefined;
     if (!content && !embed && !components) {
@@ -550,6 +551,43 @@ export class TemplateInstallService {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Принимает объект или строку JSON (частая ошибка фронта: двойная сериализация). */
+function coerceEmbedJsonField(v: unknown): Record<string, unknown> | undefined {
+  if (v == null) return undefined;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return undefined;
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      throw new Error('embedJson: некоректний JSON у рядку');
+    }
+    throw new Error('embedJson після parse має бути об’єктом');
+  }
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function coerceComponentsJsonField(v: unknown): unknown[] | undefined {
+  if (v == null) return undefined;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return undefined;
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      return Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return Array.isArray(v) ? v : undefined;
 }
 
 /** Discord webhook payload: `{ embeds: [ {...} ] }` или сразу объект embed. */
