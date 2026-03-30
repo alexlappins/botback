@@ -530,18 +530,32 @@ export class TemplateInstallService {
         continue;
       const actionRow = new ActionRowBuilder<ButtonBuilder>();
       for (const comp of (row as { components: unknown[] }).components) {
-        const c = comp as { type?: number; customId?: string; label?: string; style?: number };
+        const c = comp as {
+          type?: number;
+          customId?: string;
+          label?: string;
+          style?: number;
+          emoji?: string | { id?: string; name?: string; animated?: boolean };
+        };
         if (c?.type !== 2) continue;
         let customId = (c.customId ?? '').toString();
         for (const [name, id] of roleMap) {
-          customId = customId.replace(`{{${name}}}`, `${REACTION_ROLE_PREFIX}/${id}`);
+          customId = customId.replace(new RegExp(`\\{\\{${escapeRegex(name)}\\}\\}`, 'g'), id);
         }
-        actionRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(customId)
-            .setLabel((c.label as string) ?? 'Роль')
-            .setStyle((c.style as ButtonStyle) ?? ButtonStyle.Primary),
-        );
+        const btn = new ButtonBuilder()
+          .setCustomId(customId)
+          .setLabel((c.label as string) ?? 'Роль')
+          .setStyle((c.style as ButtonStyle) ?? ButtonStyle.Primary);
+        if (c.emoji !== undefined && c.emoji !== null) {
+          if (typeof c.emoji === 'string') {
+            btn.setEmoji(c.emoji);
+          } else if (typeof c.emoji === 'object') {
+            const e = c.emoji;
+            if (e.id) btn.setEmoji({ id: e.id, name: e.name ?? '', animated: Boolean(e.animated) });
+            else if (e.name) btn.setEmoji(e.name);
+          }
+        }
+        actionRow.addComponents(btn);
       }
       if (actionRow.components.length) rows.push(actionRow);
     }

@@ -14,10 +14,37 @@ function getEmojiKey(reaction: MessageReaction | PartialMessageReaction): string
 export class ReactionRolesComponents {
   constructor(private readonly storage: GuildStorageService) {}
 
+  /** Только выдать роль (шаблон: customId rr/give/<id>) */
+  @Button(`${REACTION_ROLE_PREFIX}/give/:roleId`)
+  async onGiveRoleButton(
+    @Context() [interaction]: ButtonContext,
+    @ComponentParam('roleId') roleId: string,
+  ) {
+    return this.applyRoleButton(interaction, roleId, 'give');
+  }
+
+  /** Только снять роль (шаблон: customId rr/take/<id>) */
+  @Button(`${REACTION_ROLE_PREFIX}/take/:roleId`)
+  async onTakeRoleButton(
+    @Context() [interaction]: ButtonContext,
+    @ComponentParam('roleId') roleId: string,
+  ) {
+    return this.applyRoleButton(interaction, roleId, 'take');
+  }
+
+  /** Переключить роль (шаблон: customId rr/<id>) */
   @Button(`${REACTION_ROLE_PREFIX}/:roleId`)
   async onRoleButton(
     @Context() [interaction]: ButtonContext,
     @ComponentParam('roleId') roleId: string,
+  ) {
+    return this.applyRoleButton(interaction, roleId, 'toggle');
+  }
+
+  private async applyRoleButton(
+    interaction: ButtonContext[0],
+    roleId: string,
+    mode: 'toggle' | 'give' | 'take',
   ) {
     if (!interaction.guild || !interaction.member) {
       return interaction.reply({
@@ -45,19 +72,45 @@ export class ReactionRolesComponents {
     const hasRole = member.roles.cache.has(roleId);
 
     try {
-      if (hasRole) {
-        await member.roles.remove(roleId);
-        return interaction.reply({
-          content: `Роль **${role.name}** снята.`,
-          ephemeral: true,
-        });
-      } else {
+      if (mode === 'give') {
+        if (hasRole) {
+          return interaction.reply({
+            content: `Роль **${role.name}** у вас уже есть.`,
+            ephemeral: true,
+          });
+        }
         await member.roles.add(roleId);
         return interaction.reply({
           content: `Роль **${role.name}** выдана.`,
           ephemeral: true,
         });
       }
+      if (mode === 'take') {
+        if (!hasRole) {
+          return interaction.reply({
+            content: `Роль **${role.name}** у вас не была выдана.`,
+            ephemeral: true,
+          });
+        }
+        await member.roles.remove(roleId);
+        return interaction.reply({
+          content: `Роль **${role.name}** снята.`,
+          ephemeral: true,
+        });
+      }
+      // toggle
+      if (hasRole) {
+        await member.roles.remove(roleId);
+        return interaction.reply({
+          content: `Роль **${role.name}** снята.`,
+          ephemeral: true,
+        });
+      }
+      await member.roles.add(roleId);
+      return interaction.reply({
+        content: `Роль **${role.name}** выдана.`,
+        ephemeral: true,
+      });
     } catch (e) {
       const err = e as Error;
       return interaction.reply({

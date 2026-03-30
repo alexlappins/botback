@@ -7,7 +7,11 @@ import {
 } from 'typeorm';
 import { ServerTemplate } from './server-template.entity';
 
-/** Сообщение для отправки в канал. components: кнопки с customId "rr/{{RoleName}}" — при установке заменится на rr/roleId */
+/**
+ * Сообщение для отправки в канал.
+ * components: кнопки; в customId плейсхолдер `{{ИмяРоли}}` заменяется на id роли:
+ * `rr/{{Role}}` — переключение; `rr/give/{{Role}}` — только выдать; `rr/take/{{Role}}` — только снять.
+ */
 @Entity('template_messages')
 export class TemplateMessage {
   @PrimaryGeneratedColumn('uuid')
