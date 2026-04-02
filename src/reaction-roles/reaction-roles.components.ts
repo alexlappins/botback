@@ -53,7 +53,9 @@ export class ReactionRolesComponents {
       });
     }
 
-    const member = interaction.guild.members.cache.get(interaction.user.id);
+    const member =
+      interaction.guild.members.cache.get(interaction.user.id) ??
+      (await interaction.guild.members.fetch(interaction.user.id).catch(() => null));
     if (!member) {
       return interaction.reply({
         content: 'Не удалось найти участника.',
@@ -61,7 +63,9 @@ export class ReactionRolesComponents {
       });
     }
 
-    const role = interaction.guild.roles.cache.get(roleId);
+    const role =
+      interaction.guild.roles.cache.get(roleId) ??
+      (await interaction.guild.roles.fetch(roleId).catch(() => null));
     if (!role) {
       return interaction.reply({
         content: 'Роль не найдена на сервере.',
