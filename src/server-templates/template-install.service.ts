@@ -49,6 +49,9 @@ export class TemplateInstallService {
     const template = await this.loadTemplate(templateId);
     if (!template) return { ok: false, error: 'Шаблон не найден' };
 
+    await guild.channels.fetch();
+    await guild.roles.fetch();
+
     const guildChannelNames = new Set(
       guild.channels.cache
         .filter((c) => c.isTextBased() && !c.isDMBased())
@@ -157,6 +160,11 @@ export class TemplateInstallService {
         errors: ['Шаблон не найден'],
       };
     }
+
+    // Принудительно обновляем кэш каналов и ролей перед установкой,
+    // чтобы не пропустить каналы созданные Discord-шаблоном.
+    await guild.channels.fetch();
+    await guild.roles.fetch();
 
     const guildRoleIdByName = new Map(
       guild.roles.cache

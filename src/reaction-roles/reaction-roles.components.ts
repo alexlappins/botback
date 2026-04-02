@@ -53,6 +53,13 @@ export class ReactionRolesComponents {
       });
     }
 
+    if (roleId.startsWith('{{') && roleId.endsWith('}}')) {
+      return interaction.reply({
+        content: 'Эта кнопка отправлена через превью — роль не была подставлена. Установите шаблон для получения рабочих кнопок.',
+        ephemeral: true,
+      });
+    }
+
     const member =
       interaction.guild.members.cache.get(interaction.user.id) ??
       (await interaction.guild.members.fetch(interaction.user.id).catch(() => null));
