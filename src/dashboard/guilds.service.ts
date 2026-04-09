@@ -84,11 +84,23 @@ export class GuildsService {
       owner: boolean;
     }>;
     const permNum = (p: string) => Number(BigInt(p));
-    return guilds.filter((g) => {
+
+    const result: DiscordGuild[] = [];
+    for (const g of guilds) {
       const hasPermission = (permNum(g.permissions) & CAN_MANAGE_GUILD) !== 0;
-      const botInGuild = this.client.guilds.cache.has(g.id);
-      return hasPermission && botInGuild;
-    });
+      if (!hasPermission) continue;
+
+      // Сначала кэш, потом API — чтобы свежедобавленный бот тоже находился
+      let botInGuild = this.client.guilds.cache.has(g.id);
+      if (!botInGuild) {
+        botInGuild = await this.client.guilds
+          .fetch(g.id)
+          .then(() => true)
+          .catch(() => false);
+      }
+      if (botInGuild) result.push(g);
+    }
+    return result;
   }
 
   getGuildChannels(guildId: string): Array<{ id: string; name: string; type: number }> {
