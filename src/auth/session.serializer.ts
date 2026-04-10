@@ -8,6 +8,7 @@ export interface SessionUser {
   avatar: string | null;
   discriminator: string;
   accessToken: string;
+  refreshToken?: string;
   role: UserRole;
 }
 

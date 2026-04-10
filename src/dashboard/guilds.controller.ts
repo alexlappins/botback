@@ -50,16 +50,33 @@ export class GuildsController {
     return user;
   }
 
+  /** Обновляет токены в сессии после рефреша Discord OAuth */
+  private updateSessionTokens(req: Request, accessToken: string, refreshToken: string): void {
+    const user = (req as Request & { user: SessionUser }).user;
+    if (user) {
+      user.accessToken = accessToken;
+      user.refreshToken = refreshToken;
+    }
+  }
+
   private async ensureGuildAccess(guildId: string, req: Request): Promise<void> {
     const user = (req as Request & { user: SessionUser }).user;
-    const list = await this.guilds.getUserGuilds(user.accessToken);
+    const list = await this.guilds.getUserGuilds(
+      user.accessToken,
+      user.refreshToken,
+      (tokens) => this.updateSessionTokens(req, tokens.accessToken, tokens.refreshToken),
+    );
     if (!list.some((g) => g.id === guildId)) throw new UnauthorizedException('No access to this guild');
   }
 
   @Get()
   async list(@Req() req: Request) {
     const user = this.getUser(req);
-    return this.guilds.getUserGuilds(user.accessToken);
+    return this.guilds.getUserGuilds(
+      user.accessToken,
+      user.refreshToken,
+      (tokens) => this.updateSessionTokens(req, tokens.accessToken, tokens.refreshToken),
+    );
   }
 
   @Get(':id/logs/events')

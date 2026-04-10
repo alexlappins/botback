@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Client, EmbedBuilder } from 'discord.js';
 import { GuildStorageService } from '../common/storage/guild-storage.service';
 
@@ -28,17 +29,38 @@ export interface DiscordGuild {
   owner: boolean;
 }
 
+/** Результат рефреша токена, возвращается вызывающей стороне для обновления сессии */
+export interface TokenRefreshResult {
+  accessToken: string;
+  refreshToken: string;
+}
+
 @Injectable()
 export class GuildsService {
   private readonly guildsCache = new Map<string, { guilds: DiscordGuild[]; expiresAt: number }>();
   private readonly inFlight = new Map<string, Promise<DiscordGuild[]>>();
+  private readonly clientId: string;
+  private readonly clientSecret: string;
 
   constructor(
     @Inject(Client) private readonly client: Client,
     private readonly storage: GuildStorageService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.clientId = config.getOrThrow<string>('DISCORD_CLIENT_ID');
+    this.clientSecret = config.getOrThrow<string>('DISCORD_CLIENT_SECRET');
+  }
 
-  async getUserGuilds(accessToken: string): Promise<DiscordGuild[]> {
+  /**
+   * Получить серверы пользователя. Если accessToken протух и есть refreshToken —
+   * автоматически обновляет токен. Новые токены возвращаются в `onTokenRefresh`,
+   * чтобы контроллер мог обновить сессию.
+   */
+  async getUserGuilds(
+    accessToken: string,
+    refreshToken?: string,
+    onTokenRefresh?: (tokens: TokenRefreshResult) => void,
+  ): Promise<DiscordGuild[]> {
     const key = createHash('sha256').update(accessToken).digest('hex');
 
     const cached = this.guildsCache.get(key);
@@ -47,7 +69,7 @@ export class GuildsService {
     let promise = this.inFlight.get(key);
     if (promise) return promise;
 
-    promise = this.fetchUserGuilds(accessToken);
+    promise = this.fetchUserGuilds(accessToken, refreshToken, onTokenRefresh);
     this.inFlight.set(key, promise);
     try {
       const guilds = await promise;
@@ -58,7 +80,12 @@ export class GuildsService {
     }
   }
 
-  private async fetchUserGuilds(accessToken: string, retriesLeft = 5): Promise<DiscordGuild[]> {
+  private async fetchUserGuilds(
+    accessToken: string,
+    refreshToken?: string,
+    onTokenRefresh?: (tokens: TokenRefreshResult) => void,
+    retriesLeft = 5,
+  ): Promise<DiscordGuild[]> {
     const res = await fetch(`${DISCORD_API}/users/@me/guilds`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -67,7 +94,16 @@ export class GuildsService {
       const data = (await res.json()) as { retry_after?: number };
       const waitMs = Math.ceil((data.retry_after ?? 1) * 1000) + 50;
       await new Promise((r) => setTimeout(r, waitMs));
-      return this.fetchUserGuilds(accessToken, retriesLeft - 1);
+      return this.fetchUserGuilds(accessToken, refreshToken, onTokenRefresh, retriesLeft - 1);
+    }
+
+    // Токен протух — пробуем обновить через refresh_token
+    if (res.status === 401 && refreshToken) {
+      const newTokens = await this.refreshAccessToken(refreshToken);
+      if (newTokens) {
+        onTokenRefresh?.(newTokens);
+        return this.fetchUserGuilds(newTokens.accessToken, newTokens.refreshToken, onTokenRefresh, 0);
+      }
     }
 
     if (!res.ok) {
@@ -83,14 +119,15 @@ export class GuildsService {
       permissions: string;
       owner: boolean;
     }>;
-    const permNum = (p: string) => Number(BigInt(p));
+    console.log(`[GuildsService] Discord вернул ${guilds.length} серверов пользователя`);
+
+    const botGuildIds = new Set(this.client.guilds.cache.map((g) => g.id));
+    console.log(`[GuildsService] Бот сейчас на ${botGuildIds.size} серверах:`, [...botGuildIds]);
 
     const result: DiscordGuild[] = [];
     for (const g of guilds) {
-      const hasPermission = (permNum(g.permissions) & CAN_MANAGE_GUILD) !== 0;
-      if (!hasPermission) continue;
+      const hasPermission = g.owner || (BigInt(g.permissions || '0') & BigInt(CAN_MANAGE_GUILD)) !== 0n;
 
-      // Сначала кэш, потом API — чтобы свежедобавленный бот тоже находился
       let botInGuild = this.client.guilds.cache.has(g.id);
       if (!botInGuild) {
         botInGuild = await this.client.guilds
@@ -98,9 +135,43 @@ export class GuildsService {
           .then(() => true)
           .catch(() => false);
       }
+
+      console.log(
+        `[GuildsService]   ${g.name} (${g.id}): owner=${g.owner}, perm=${hasPermission}, bot=${botInGuild}`,
+      );
+
+      if (!hasPermission) continue;
       if (botInGuild) result.push(g);
     }
+    console.log(`[GuildsService] Итого подходит: ${result.length}`);
     return result;
+  }
+
+  private async refreshAccessToken(refreshToken: string): Promise<TokenRefreshResult | null> {
+    try {
+      const res = await fetch(`${DISCORD_API}/oauth2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+        }),
+      });
+      if (!res.ok) {
+        console.error('Discord token refresh failed:', res.status, await res.text());
+        return null;
+      }
+      const data = (await res.json()) as {
+        access_token: string;
+        refresh_token: string;
+      };
+      return { accessToken: data.access_token, refreshToken: data.refresh_token };
+    } catch (e) {
+      console.error('Discord token refresh error:', e);
+      return null;
+    }
   }
 
   getGuildChannels(guildId: string): Array<{ id: string; name: string; type: number }> {

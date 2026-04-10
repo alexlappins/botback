@@ -28,7 +28,7 @@ export class DiscordStrategy extends PassportStrategy(Strategy, 'discord') {
 
   validate(
     accessToken: string,
-    _refreshToken: string,
+    refreshToken: string,
     profile: Profile,
   ): SessionUser {
     const role: UserRole = this.adminIds.has(profile.id) ? 'admin' : 'customer';
@@ -38,6 +38,7 @@ export class DiscordStrategy extends PassportStrategy(Strategy, 'discord') {
       avatar: profile.avatar ?? null,
       discriminator: (profile as { discriminator?: string }).discriminator ?? '0',
       accessToken,
+      refreshToken,
       role,
     };
   }
