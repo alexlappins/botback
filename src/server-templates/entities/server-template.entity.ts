@@ -8,10 +8,12 @@ import {
 } from 'typeorm';
 import { TemplateCategory } from './template-category.entity';
 import { TemplateChannel } from './template-channel.entity';
+import { TemplateEmoji } from './template-emoji.entity';
 import { TemplateLogChannel } from './template-log-channel.entity';
 import { TemplateMessage } from './template-message.entity';
 import { TemplateReactionRole } from './template-reaction-role.entity';
 import { TemplateRole } from './template-role.entity';
+import { TemplateSticker } from './template-sticker.entity';
 
 @Entity('server_templates')
 export class ServerTemplate {
@@ -51,4 +53,10 @@ export class ServerTemplate {
 
   @OneToMany(() => TemplateLogChannel, (l) => l.template)
   logChannels: TemplateLogChannel[];
+
+  @OneToMany(() => TemplateEmoji, (e) => e.template)
+  emojis: TemplateEmoji[];
+
+  @OneToMany(() => TemplateSticker, (s) => s.template)
+  stickers: TemplateSticker[];
 }

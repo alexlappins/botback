@@ -6,7 +6,9 @@ import { TemplateChannel } from './entities/template-channel.entity';
 import { TemplateLogChannel } from './entities/template-log-channel.entity';
 import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
+import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
+import { TemplateSticker } from './entities/template-sticker.entity';
 import { UserTemplateAccess } from './entities/user-template-access.entity';
 import { NoCacheInterceptor } from './no-cache.interceptor';
 import { TemplateAccessAdminController, TemplateAccessController } from './template-access.controller';
@@ -23,6 +25,8 @@ import { TemplateInstallService } from './template-install.service';
       TemplateMessage,
       TemplateReactionRole,
       TemplateLogChannel,
+      TemplateEmoji,
+      TemplateSticker,
       UserTemplateAccess,
     ]),
   ],

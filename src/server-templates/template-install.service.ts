@@ -8,10 +8,12 @@ import { REACTION_ROLE_PREFIX } from '../reaction-roles/reaction-roles.commands'
 import { ServerTemplate } from './entities/server-template.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateChannel } from './entities/template-channel.entity';
+import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateLogChannel } from './entities/template-log-channel.entity';
 import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
 import { TemplateRole } from './entities/template-role.entity';
+import { TemplateSticker } from './entities/template-sticker.entity';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
   'joinLeave',
@@ -39,6 +41,10 @@ export class TemplateInstallService {
     private readonly reactionRoleRepo: Repository<TemplateReactionRole>,
     @InjectRepository(TemplateLogChannel)
     private readonly logChannelRepo: Repository<TemplateLogChannel>,
+    @InjectRepository(TemplateEmoji)
+    private readonly emojiRepo: Repository<TemplateEmoji>,
+    @InjectRepository(TemplateSticker)
+    private readonly stickerRepo: Repository<TemplateSticker>,
     private readonly storage: GuildStorageService,
   ) {}
 
@@ -128,6 +134,8 @@ export class TemplateInstallService {
       messagesSent: 0,
       reactionRolesBound: 0,
       logChannelsSet: 0,
+      emojisCreated: 0,
+      stickersCreated: 0,
     };
     const emptySkipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -189,6 +197,8 @@ export class TemplateInstallService {
       messagesSent: 0,
       reactionRolesBound: 0,
       logChannelsSet: 0,
+      emojisCreated: 0,
+      stickersCreated: 0,
     };
     const skipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -337,6 +347,33 @@ export class TemplateInstallService {
         summary.logChannelsSet += 1;
       }
 
+      // 7. Эмодзи
+      const emojis = template.emojis ?? [];
+      for (const em of emojis) {
+        try {
+          await guild.emojis.create({ attachment: em.imageUrl, name: em.name });
+          summary.emojisCreated += 1;
+        } catch (e) {
+          warnings.push(`Не удалось создать эмодзи "${em.name}": ${(e as Error).message}`);
+        }
+      }
+
+      // 8. Стикеры
+      const stickers = template.stickers ?? [];
+      for (const st of stickers) {
+        try {
+          await guild.stickers.create({
+            file: st.imageUrl,
+            name: st.name,
+            tags: st.tags,
+            description: st.description ?? undefined,
+          });
+          summary.stickersCreated += 1;
+        } catch (e) {
+          warnings.push(`Не удалось создать стикер "${st.name}": ${(e as Error).message}`);
+        }
+      }
+
       return {
         ok: true,
         summary,
@@ -405,6 +442,8 @@ export class TemplateInstallService {
         messages: true,
         reactionRoles: true,
         logChannels: true,
+        emojis: true,
+        stickers: true,
       },
     });
   }
@@ -671,6 +710,8 @@ export type TemplateInstallSummary = {
   messagesSent: number;
   reactionRolesBound: number;
   logChannelsSet: number;
+  emojisCreated: number;
+  stickersCreated: number;
 };
 
 export type TemplateInstallSkipped = {

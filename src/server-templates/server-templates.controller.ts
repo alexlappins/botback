@@ -23,7 +23,9 @@ import type { TemplatePermissionOverwrite } from './entities/template-channel.en
 import { TemplateLogChannel } from './entities/template-log-channel.entity';
 import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
+import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
+import { TemplateSticker } from './entities/template-sticker.entity';
 import { NoCacheInterceptor } from './no-cache.interceptor';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = ['joinLeave', 'messages', 'moderation', 'channel', 'banKick'];
@@ -40,6 +42,8 @@ export class ServerTemplatesController {
     @InjectRepository(TemplateMessage) private readonly messageRepo: Repository<TemplateMessage>,
     @InjectRepository(TemplateReactionRole) private readonly reactionRoleRepo: Repository<TemplateReactionRole>,
     @InjectRepository(TemplateLogChannel) private readonly logChannelRepo: Repository<TemplateLogChannel>,
+    @InjectRepository(TemplateEmoji) private readonly emojiRepo: Repository<TemplateEmoji>,
+    @InjectRepository(TemplateSticker) private readonly stickerRepo: Repository<TemplateSticker>,
   ) {}
 
   private async ensureTemplate(id: string): Promise<ServerTemplate> {
@@ -86,6 +90,8 @@ export class ServerTemplatesController {
       .leftJoinAndSelect('t.messages', 'messages')
       .leftJoinAndSelect('t.reactionRoles', 'reactionRoles')
       .leftJoinAndSelect('t.logChannels', 'logChannels')
+      .leftJoinAndSelect('t.emojis', 'emojis')
+      .leftJoinAndSelect('t.stickers', 'stickers')
       .getOne();
     if (!template) throw new NotFoundException('Template not found');
     return template;
@@ -435,6 +441,103 @@ export class ServerTemplatesController {
     await this.ensureTemplate(id);
     const result = await this.logChannelRepo.delete({ id: lcId, templateId: id });
     if (result.affected === 0) throw new NotFoundException('Log channel not found');
+    return { ok: true };
+  }
+
+  // ——— Emojis ———
+  @Get(':id/emojis')
+  async getEmojis(@Param('id') id: string) {
+    await this.ensureTemplate(id);
+    return this.emojiRepo.find({ where: { templateId: id } });
+  }
+
+  @Post(':id/emojis')
+  async addEmoji(@Param('id') id: string, @Body() body: { name: string; imageUrl: string }) {
+    await this.ensureTemplate(id);
+    const name = body?.name?.trim();
+    const imageUrl = body?.imageUrl?.trim();
+    if (!name) throw new BadRequestException('name required');
+    if (!imageUrl) throw new BadRequestException('imageUrl required');
+    const emoji = this.emojiRepo.create({ templateId: id, name, imageUrl });
+    await this.emojiRepo.save(emoji);
+    return emoji;
+  }
+
+  @Patch(':id/emojis/:emojiId')
+  async updateEmoji(
+    @Param('id') id: string,
+    @Param('emojiId') emojiId: string,
+    @Body() body: { name?: string; imageUrl?: string },
+  ) {
+    await this.ensureTemplate(id);
+    const emoji = await this.emojiRepo.findOne({ where: { id: emojiId, templateId: id } });
+    if (!emoji) throw new NotFoundException('Emoji not found');
+    if (body.name !== undefined) emoji.name = body.name.trim();
+    if (body.imageUrl !== undefined) emoji.imageUrl = body.imageUrl.trim();
+    await this.emojiRepo.save(emoji);
+    return emoji;
+  }
+
+  @Delete(':id/emojis/:emojiId')
+  async removeEmoji(@Param('id') id: string, @Param('emojiId') emojiId: string) {
+    await this.ensureTemplate(id);
+    const result = await this.emojiRepo.delete({ id: emojiId, templateId: id });
+    if (result.affected === 0) throw new NotFoundException('Emoji not found');
+    return { ok: true };
+  }
+
+  // ——— Stickers ———
+  @Get(':id/stickers')
+  async getStickers(@Param('id') id: string) {
+    await this.ensureTemplate(id);
+    return this.stickerRepo.find({ where: { templateId: id } });
+  }
+
+  @Post(':id/stickers')
+  async addSticker(
+    @Param('id') id: string,
+    @Body() body: { name: string; tags: string; imageUrl: string; description?: string | null },
+  ) {
+    await this.ensureTemplate(id);
+    const name = body?.name?.trim();
+    const tags = body?.tags?.trim();
+    const imageUrl = body?.imageUrl?.trim();
+    if (!name) throw new BadRequestException('name required');
+    if (!tags) throw new BadRequestException('tags required');
+    if (!imageUrl) throw new BadRequestException('imageUrl required');
+    const sticker = this.stickerRepo.create({
+      templateId: id,
+      name,
+      tags,
+      imageUrl,
+      description: body.description?.trim() || null,
+    });
+    await this.stickerRepo.save(sticker);
+    return sticker;
+  }
+
+  @Patch(':id/stickers/:stickerId')
+  async updateSticker(
+    @Param('id') id: string,
+    @Param('stickerId') stickerId: string,
+    @Body() body: { name?: string; tags?: string; imageUrl?: string; description?: string | null },
+  ) {
+    await this.ensureTemplate(id);
+    const sticker = await this.stickerRepo.findOne({ where: { id: stickerId, templateId: id } });
+    if (!sticker) throw new NotFoundException('Sticker not found');
+    if (body.name !== undefined) sticker.name = body.name.trim();
+    if (body.tags !== undefined) sticker.tags = body.tags.trim();
+    if (body.imageUrl !== undefined) sticker.imageUrl = body.imageUrl.trim();
+    if (body.description !== undefined) sticker.description = body.description?.trim() || null;
+    await this.stickerRepo.save(sticker);
+    return sticker;
+  }
+
+  @Delete(':id/stickers/:stickerId')
+  async removeSticker(@Param('id') id: string, @Param('stickerId') stickerId: string) {
+    await this.ensureTemplate(id);
+    const result = await this.stickerRepo.delete({ id: stickerId, templateId: id });
+    if (result.affected === 0) throw new NotFoundException('Sticker not found');
     return { ok: true };
   }
 }
