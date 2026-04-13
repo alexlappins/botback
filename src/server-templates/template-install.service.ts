@@ -291,6 +291,7 @@ export class TemplateInstallService {
           continue;
         }
 
+        const content = msg.content?.trim() || undefined;
         const embed = msg.embedJson
           ? this.buildEmbed(msg.embedJson as Record<string, unknown>, roleIdByName)
           : undefined;
@@ -298,8 +299,14 @@ export class TemplateInstallService {
           ? this.buildComponents(msg.componentsJson, roleIdByName)
           : undefined;
 
+        // Пропускаем полностью пустые сообщения — Discord не разрешает их отправлять
+        if (!content && !embed && !components) {
+          warnings.push(`Сообщение в канале "${msg.channelName}" пустое — пропущено`);
+          continue;
+        }
+
         const sent = await (channel as import('discord.js').TextChannel).send({
-          content: msg.content ?? undefined,
+          content,
           embeds: embed ? [embed] : undefined,
           components: components ?? undefined,
         });
