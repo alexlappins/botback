@@ -292,11 +292,13 @@ export class TemplateInstallService {
         }
 
         const content = msg.content?.trim() || undefined;
-        const embed = msg.embedJson
-          ? this.buildEmbed(msg.embedJson as Record<string, unknown>, roleIdByName)
-          : undefined;
-        const components = msg.componentsJson
-          ? this.buildComponents(msg.componentsJson, roleIdByName)
+        // embedJson и componentsJson могут лежать в БД и как объект/массив, и как строка
+        // (фронт часто отправляет JSON-строкой) — нормализуем
+        const embedRecord = coerceEmbedJsonField(msg.embedJson);
+        const embed = embedRecord ? this.buildEmbed(embedRecord, roleIdByName) : undefined;
+        const componentsPayload = coerceComponentsJsonField(msg.componentsJson);
+        const components = componentsPayload
+          ? this.buildComponents(componentsPayload, roleIdByName)
           : undefined;
 
         // Пропускаем полностью пустые сообщения — Discord не разрешает их отправлять
@@ -357,11 +359,15 @@ export class TemplateInstallService {
       // 7. Эмодзи
       const emojis = template.emojis ?? [];
       for (const em of emojis) {
+        // Discord требует имя 2-32 символа, [a-zA-Z0-9_]
+        let name = em.name.replace(/[^a-zA-Z0-9_]/g, '_');
+        if (name.length < 2) name = `emoji_${name || em.id.slice(0, 6)}`;
+        name = name.slice(0, 32);
         try {
-          await guild.emojis.create({ attachment: em.imageUrl, name: em.name });
+          await guild.emojis.create({ attachment: em.imageUrl, name });
           summary.emojisCreated += 1;
         } catch (e) {
-          warnings.push(`Не удалось создать эмодзи "${em.name}": ${(e as Error).message}`);
+          warnings.push(`Не удалось создать эмодзи "${name}": ${(e as Error).message}`);
         }
       }
 

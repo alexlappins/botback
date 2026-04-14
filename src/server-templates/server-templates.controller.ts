@@ -302,7 +302,7 @@ export class ServerTemplatesController {
   async addMessage(
     @Param('id') id: string,
     @Body()
-    body: { channelName: string; messageOrder?: number; content?: string | null; embedJson?: Record<string, unknown> | null; componentsJson?: unknown[] | null },
+    body: { channelName: string; messageOrder?: number; content?: string | null; embedJson?: Record<string, unknown> | string | null; componentsJson?: unknown[] | string | null },
   ) {
     await this.ensureTemplate(id);
     const channelName = body?.channelName?.trim();
@@ -312,8 +312,8 @@ export class ServerTemplatesController {
       channelName,
       messageOrder: body.messageOrder ?? 0,
       content: body.content?.trim() || null,
-      embedJson: body.embedJson ?? null,
-      componentsJson: body.componentsJson ?? null,
+      embedJson: parseJsonbObject(body.embedJson),
+      componentsJson: parseJsonbArray(body.componentsJson),
     });
     await this.messageRepo.save(msg);
     return msg;
@@ -324,7 +324,7 @@ export class ServerTemplatesController {
     @Param('id') id: string,
     @Param('messageId') messageId: string,
     @Body()
-    body: { channelName?: string; messageOrder?: number; content?: string | null; embedJson?: Record<string, unknown> | null; componentsJson?: unknown[] | null },
+    body: { channelName?: string; messageOrder?: number; content?: string | null; embedJson?: Record<string, unknown> | string | null; componentsJson?: unknown[] | string | null },
   ) {
     await this.ensureTemplate(id);
     const msg = await this.messageRepo.findOne({ where: { id: messageId, templateId: id } });
@@ -332,8 +332,8 @@ export class ServerTemplatesController {
     if (body.channelName !== undefined) msg.channelName = body.channelName.trim();
     if (body.messageOrder !== undefined) msg.messageOrder = body.messageOrder;
     if (body.content !== undefined) msg.content = body.content?.trim() || null;
-    if (body.embedJson !== undefined) msg.embedJson = body.embedJson;
-    if (body.componentsJson !== undefined) msg.componentsJson = body.componentsJson;
+    if (body.embedJson !== undefined) msg.embedJson = parseJsonbObject(body.embedJson);
+    if (body.componentsJson !== undefined) msg.componentsJson = parseJsonbArray(body.componentsJson);
     await this.messageRepo.save(msg);
     return msg;
   }
@@ -540,4 +540,42 @@ export class ServerTemplatesController {
     if (result.affected === 0) throw new NotFoundException('Sticker not found');
     return { ok: true };
   }
+}
+
+/**
+ * Нормализация входящего JSONB поля: фронт может прислать объект или JSON-строку.
+ * Возвращаем object, чтобы не сохранить строку в JSONB колонку.
+ */
+function parseJsonbObject(v: unknown): Record<string, unknown> | null {
+  if (v == null) return null;
+  if (typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return null;
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      throw new BadRequestException('embedJson: invalid JSON');
+    }
+  }
+  return null;
+}
+
+function parseJsonbArray(v: unknown): unknown[] | null {
+  if (v == null) return null;
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return null;
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      throw new BadRequestException('componentsJson: invalid JSON');
+    }
+  }
+  return null;
 }
