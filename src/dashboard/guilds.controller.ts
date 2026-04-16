@@ -70,12 +70,13 @@ export class GuildsController {
   }
 
   @Get()
-  async list(@Req() req: Request) {
+  async list(@Req() req: Request, @Query('refresh') refresh?: string) {
     const user = this.getUser(req);
     return this.guilds.getUserGuilds(
       user.accessToken,
       user.refreshToken,
       (tokens) => this.updateSessionTokens(req, tokens.accessToken, tokens.refreshToken),
+      refresh === '1' || refresh === 'true',
     );
   }
 

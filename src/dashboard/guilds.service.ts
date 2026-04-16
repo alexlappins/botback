@@ -60,8 +60,13 @@ export class GuildsService {
     accessToken: string,
     refreshToken?: string,
     onTokenRefresh?: (tokens: TokenRefreshResult) => void,
+    forceRefresh = false,
   ): Promise<DiscordGuild[]> {
     const key = createHash('sha256').update(accessToken).digest('hex');
+
+    if (forceRefresh) {
+      this.guildsCache.delete(key);
+    }
 
     const cached = this.guildsCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.guilds;
