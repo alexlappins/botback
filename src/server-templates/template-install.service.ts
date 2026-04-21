@@ -294,11 +294,17 @@ export class TemplateInstallService {
         const content = msg.content?.trim() || undefined;
         // embedJson и componentsJson могут лежать в БД и как объект/массив, и как строка
         // (фронт часто отправляет JSON-строкой) — нормализуем
+        // Для подстановки {{RoleName}} мёрджим роли созданные install'ом + уже существующие на гильдии
+        // (созданные Discord-шаблоном на Шаге 1).
+        const roleMapForMsg = new Map<string, string>([
+          ...guildRoleIdByName,
+          ...roleIdByName, // свежесозданные имеют приоритет при совпадении имён
+        ]);
         const embedRecord = coerceEmbedJsonField(msg.embedJson);
-        const embed = embedRecord ? this.buildEmbed(embedRecord, roleIdByName) : undefined;
+        const embed = embedRecord ? this.buildEmbed(embedRecord, roleMapForMsg) : undefined;
         const componentsPayload = coerceComponentsJsonField(msg.componentsJson);
         const components = componentsPayload
-          ? this.buildComponents(componentsPayload, roleIdByName)
+          ? this.buildComponents(componentsPayload, roleMapForMsg)
           : undefined;
 
         // Пропускаем полностью пустые сообщения — Discord не разрешает их отправлять
