@@ -110,6 +110,11 @@ export class ServerTemplatesController {
       discordTemplateUrl?: string | null;
       iconUrl?: string | null;
       enableServerStats?: boolean;
+      statsCategoryName?: string | null;
+      statsTotalName?: string | null;
+      statsHumansName?: string | null;
+      statsBotsName?: string | null;
+      statsOnlineName?: string | null;
     },
   ) {
     await this.ensureTemplate(id);
@@ -130,9 +135,21 @@ export class ServerTemplatesController {
     if (body.enableServerStats !== undefined) {
       await this.templateRepo.update(id, { enableServerStats: Boolean(body.enableServerStats) });
     }
+    const statsFields: Record<string, string | null> = {};
+    if (body.statsCategoryName !== undefined) statsFields.statsCategoryName = body.statsCategoryName?.trim() || null;
+    if (body.statsTotalName !== undefined) statsFields.statsTotalName = body.statsTotalName?.trim() || null;
+    if (body.statsHumansName !== undefined) statsFields.statsHumansName = body.statsHumansName?.trim() || null;
+    if (body.statsBotsName !== undefined) statsFields.statsBotsName = body.statsBotsName?.trim() || null;
+    if (body.statsOnlineName !== undefined) statsFields.statsOnlineName = body.statsOnlineName?.trim() || null;
+    if (Object.keys(statsFields).length) await this.templateRepo.update(id, statsFields);
+
     return this.templateRepo.findOne({
       where: { id },
-      select: ['id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats', 'createdAt', 'updatedAt'],
+      select: [
+        'id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats',
+        'statsCategoryName', 'statsTotalName', 'statsHumansName', 'statsBotsName', 'statsOnlineName',
+        'createdAt', 'updatedAt',
+      ],
     });
   }
 

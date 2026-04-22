@@ -242,24 +242,59 @@ export class TemplateInstallService {
         summary.rolesCreated += 1;
       }
 
-      // 1.1. Пытаемся поднять роль бота выше всех управляемых ролей,
-      // чтобы кнопки авторолей могли выдавать эти роли без ошибок иерархии.
+      // 1.1. Поднимаем роль бота выше всех немоделируемых ролей —
+      // это даёт боту иерархию, достаточную для выдачи ролей шаблона через кнопки.
+      // Если не получилось (у бота нет MANAGE_ROLES, или его роль ниже админки),
+      // падаем back: опускаем все шаблонные роли на 1 ниже текущей позиции бота.
       try {
+        await guild.roles.fetch();
         const me = guild.members.me ?? (await guild.members.fetchMe());
-        const botManagedRole = me.roles.botRole; // managed role, привязанная к боту
-        if (botManagedRole) {
+        const botRole = me.roles.botRole;
+        const botHighest = me.roles.highest;
+
+        let liftOk = false;
+        if (botRole) {
           const maxNonManaged = Math.max(
             1,
             ...guild.roles.cache
               .filter((r) => !r.managed && r.id !== guild.id)
               .map((r) => r.position),
           );
-          if (botManagedRole.position < maxNonManaged) {
-            await botManagedRole.setPosition(maxNonManaged).catch(() => null);
+          if (botRole.position <= maxNonManaged) {
+            try {
+              await botRole.setPosition(maxNonManaged + 1);
+              liftOk = true;
+              console.log(`[TemplateInstall] Bot role lifted to position ${maxNonManaged + 1}`);
+            } catch (err) {
+              console.warn(
+                `[TemplateInstall] Failed to lift bot role: ${(err as Error).message}. ` +
+                  'Будет применён fallback — понижение шаблонных ролей.',
+              );
+            }
+          } else {
+            liftOk = true; // уже выше всех
           }
         }
-      } catch {
-        // best-effort: если не получилось — пользователь может вручную поднять роль
+
+        // Fallback: если поднять роль бота не вышло — опускаем все шаблонные роли под ботом
+        if (!liftOk && botHighest && roleIdByName.size > 0) {
+          const targetPosition = Math.max(1, botHighest.position - 1);
+          const positions = [...roleIdByName.values()].map((roleId, idx) => ({
+            role: roleId,
+            position: Math.max(1, targetPosition - idx),
+          }));
+          await guild.roles.setPositions(positions).catch((err) => {
+            warnings.push(
+              `Не удалось опустить роли шаблона под роль бота: ${(err as Error).message}. ` +
+                'Перетащите роль бота выше шаблонных ролей вручную в настройках сервера.',
+            );
+          });
+        }
+      } catch (e) {
+        warnings.push(
+          `Не удалось настроить иерархию ролей: ${(e as Error).message}. ` +
+            'Перетащите роль бота выше всех ролей вручную в настройках сервера.',
+        );
       }
 
       // 2. Категории (Discord type 4)
@@ -433,7 +468,13 @@ export class TemplateInstallService {
       // 9. Статистика сервера (категория с 4 каналами-счётчиками)
       if (template.enableServerStats) {
         try {
-          await this.serverStats.setup(guildId);
+          await this.serverStats.setup(guildId, {
+            categoryName: template.statsCategoryName ?? undefined,
+            totalName: template.statsTotalName ?? undefined,
+            humansName: template.statsHumansName ?? undefined,
+            botsName: template.statsBotsName ?? undefined,
+            onlineName: template.statsOnlineName ?? undefined,
+          });
         } catch (e) {
           warnings.push(`Не удалось настроить статистику сервера: ${(e as Error).message}`);
         }

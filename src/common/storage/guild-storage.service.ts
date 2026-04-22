@@ -16,13 +16,21 @@ export type ReactionRoleBindings = Record<string, Record<string, string>>;
 /** messageId → channelId (для отображения в дашборде) */
 export type ReactionRoleChannels = Record<string, string>;
 
-/** Конфигурация статистики сервера: ID категории и 4 каналов-счётчиков */
+/** Конфигурация статистики сервера: ID категории, 4 каналов-счётчиков и шаблоны имён */
 export interface ServerStatsConfig {
   categoryId: string;
   totalChannelId: string;
   humansChannelId: string;
   botsChannelId: string;
   onlineChannelId: string;
+  /** Шаблоны имён: `{count}` заменяется на число. Если не задано — используются дефолтные. */
+  nameTemplates?: {
+    categoryName?: string;
+    totalName?: string;
+    humansName?: string;
+    botsName?: string;
+    onlineName?: string;
+  };
 }
 
 export interface GuildConfig {

@@ -11,7 +11,27 @@ import {
  * (Всего / Люди / Боты / В сети) в отдельной категории в самом верху.
  *
  * Discord rate limit: переименование канала — 2 раза в 10 минут. Поэтому апдейтим не чаще чем раз в 10 мин.
+ *
+ * Названия категории и каналов настраиваются через `nameTemplates`. Плейсхолдер `{count}` заменяется на число.
  */
+
+/** Шаблоны имён для статистики. `{count}` заменяется на число. */
+export interface StatsNameTemplates {
+  categoryName?: string;
+  totalName?: string;
+  humansName?: string;
+  botsName?: string;
+  onlineName?: string;
+}
+
+const DEFAULT_NAMES: Required<StatsNameTemplates> = {
+  categoryName: '📊 Статистика сервера',
+  totalName: '👥 Всего: {count}',
+  humansName: '👤 Люди: {count}',
+  botsName: '🤖 Боты: {count}',
+  onlineName: '🟢 В сети: {count}',
+};
+
 @Injectable()
 export class ServerStatsService {
   private readonly logger = new Logger(ServerStatsService.name);
@@ -24,12 +44,22 @@ export class ServerStatsService {
   /**
    * Создаёт категорию со статистикой и 4 голосовых канала-счётчика.
    * Возвращает конфиг. Если уже настроено — возвращает существующий (не пересоздаёт).
+   * @param templates — кастомные названия (категории и каналов). Если не передано — дефолтные.
    */
-  async setup(guildId: string): Promise<ServerStatsConfig> {
+  async setup(
+    guildId: string,
+    templates: StatsNameTemplates = {},
+  ): Promise<ServerStatsConfig> {
+    const names = { ...DEFAULT_NAMES, ...stripEmpty(templates) };
+
     const existing = this.storage.getServerStats(guildId);
     if (existing) {
       const guild = await this.resolveGuild(guildId);
-      if (guild && guild.channels.cache.get(existing.categoryId)) return existing;
+      if (guild && guild.channels.cache.get(existing.categoryId)) {
+        // Обновим шаблоны имён в хранилище, чтобы новые применились при следующем апдейте
+        this.storage.setServerStats(guildId, { ...existing, nameTemplates: templates });
+        return existing;
+      }
       // категории больше нет — продолжаем и создадим заново
     }
 
@@ -38,7 +68,7 @@ export class ServerStatsService {
 
     // Категория в самом верху (position = 0)
     const category = await guild.channels.create({
-      name: '📊 Статистика сервера',
+      name: names.categoryName,
       type: ChannelType.GuildCategory,
       position: 0,
     });
@@ -53,25 +83,25 @@ export class ServerStatsService {
 
     const [total, humans, bots, online] = await Promise.all([
       guild.channels.create({
-        name: '👥 Всего: 0',
+        name: renderName(names.totalName, 0),
         type: ChannelType.GuildVoice,
         parent: category.id,
         permissionOverwrites: denyConnect,
       }),
       guild.channels.create({
-        name: '👤 Люди: 0',
+        name: renderName(names.humansName, 0),
         type: ChannelType.GuildVoice,
         parent: category.id,
         permissionOverwrites: denyConnect,
       }),
       guild.channels.create({
-        name: '🤖 Боты: 0',
+        name: renderName(names.botsName, 0),
         type: ChannelType.GuildVoice,
         parent: category.id,
         permissionOverwrites: denyConnect,
       }),
       guild.channels.create({
-        name: '🟢 В сети: 0',
+        name: renderName(names.onlineName, 0),
         type: ChannelType.GuildVoice,
         parent: category.id,
         permissionOverwrites: denyConnect,
@@ -84,6 +114,7 @@ export class ServerStatsService {
       humansChannelId: humans.id,
       botsChannelId: bots.id,
       onlineChannelId: online.id,
+      nameTemplates: templates,
     };
     this.storage.setServerStats(guildId, config);
 
@@ -142,6 +173,8 @@ export class ServerStatsService {
       (m) => !m.user.bot && m.presence?.status && m.presence.status !== 'offline',
     ).size;
 
+    const names = { ...DEFAULT_NAMES, ...stripEmpty(config.nameTemplates ?? {}) };
+
     const rename = async (channelId: string, newName: string) => {
       const ch = guild.channels.cache.get(channelId);
       if (!ch) return;
@@ -150,11 +183,17 @@ export class ServerStatsService {
     };
 
     await Promise.all([
-      rename(config.totalChannelId, `👥 Всего: ${total}`),
-      rename(config.humansChannelId, `👤 Люди: ${humans}`),
-      rename(config.botsChannelId, `🤖 Боты: ${bots}`),
-      rename(config.onlineChannelId, `🟢 В сети: ${online}`),
+      rename(config.totalChannelId, renderName(names.totalName, total)),
+      rename(config.humansChannelId, renderName(names.humansName, humans)),
+      rename(config.botsChannelId, renderName(names.botsName, bots)),
+      rename(config.onlineChannelId, renderName(names.onlineName, online)),
     ]);
+
+    // Название категории тоже синхронизируем (если юзер сменил шаблон)
+    const category = guild.channels.cache.get(config.categoryId);
+    if (category && category.name !== names.categoryName) {
+      await category.setName(names.categoryName).catch(() => null);
+    }
   }
 
   private async resolveGuild(guildId: string): Promise<Guild | null> {
@@ -163,4 +202,18 @@ export class ServerStatsService {
       (await this.client.guilds.fetch(guildId).catch(() => null))
     );
   }
+}
+
+/** Подставляем число в шаблон имени (замена {count}), обрезаем до 100 символов (лимит Discord) */
+function renderName(template: string, count: number): string {
+  return template.replace(/\{count\}/g, String(count)).slice(0, 100);
+}
+
+/** Убираем пустые/whitespace поля — чтобы не перезатереть дефолтные пустой строкой */
+function stripEmpty(obj: StatsNameTemplates): Partial<StatsNameTemplates> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && v.trim()) out[k] = v;
+  }
+  return out as Partial<StatsNameTemplates>;
 }

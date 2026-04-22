@@ -38,6 +38,26 @@ export class ServerTemplate {
   @Column({ name: 'enable_server_stats', type: 'boolean', default: false })
   enableServerStats: boolean;
 
+  /** Название категории со статистикой (null = дефолт "📊 Статистика сервера") */
+  @Column({ name: 'stats_category_name', type: 'varchar', length: 100, nullable: true })
+  statsCategoryName: string | null;
+
+  /** Шаблон имени канала "Всего" — `{count}` заменится на число. null = дефолт */
+  @Column({ name: 'stats_total_name', type: 'varchar', length: 100, nullable: true })
+  statsTotalName: string | null;
+
+  /** Шаблон имени канала "Люди" */
+  @Column({ name: 'stats_humans_name', type: 'varchar', length: 100, nullable: true })
+  statsHumansName: string | null;
+
+  /** Шаблон имени канала "Боты" */
+  @Column({ name: 'stats_bots_name', type: 'varchar', length: 100, nullable: true })
+  statsBotsName: string | null;
+
+  /** Шаблон имени канала "В сети" */
+  @Column({ name: 'stats_online_name', type: 'varchar', length: 100, nullable: true })
+  statsOnlineName: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
