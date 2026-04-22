@@ -22,6 +22,9 @@ import { DiscordUpdate } from './discord.update';
           GatewayIntentBits.DirectMessages,
           GatewayIntentBits.GuildModeration,
           GatewayIntentBits.GuildEmojisAndStickers,
+          // Нужен для счётчика "В сети" в ServerStats. Privileged — включить в Dev Portal:
+          // https://discord.com/developers/applications/<APP_ID>/bot → Privileged Gateway Intents
+          GatewayIntentBits.GuildPresences,
         ],
         partials: [Partials.Message, Partials.Reaction],
         development: config.get<string>('DISCORD_GUILD_ID')

@@ -56,18 +56,21 @@ export class ServerTemplatesController {
   async list() {
     return this.templateRepo.find({
       order: { createdAt: 'DESC' },
-      select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt'],
+      select: ['id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats', 'createdAt'],
     });
   }
 
   @Post()
-  async create(@Body() body: { name: string; description?: string | null; discordTemplateUrl?: string | null }) {
+  async create(
+    @Body() body: { name: string; description?: string | null; discordTemplateUrl?: string | null; iconUrl?: string | null },
+  ) {
     const name = body?.name?.trim();
     if (!name) throw new BadRequestException('name required');
     const template = this.templateRepo.create({
       name,
       description: body.description?.trim() || null,
       discordTemplateUrl: body.discordTemplateUrl?.trim() || null,
+      iconUrl: body.iconUrl?.trim() || null,
     });
     await this.templateRepo.save(template);
     return {
@@ -75,6 +78,7 @@ export class ServerTemplatesController {
       name: template.name,
       description: template.description,
       discordTemplateUrl: template.discordTemplateUrl,
+      iconUrl: template.iconUrl,
       createdAt: template.createdAt,
     };
   }
@@ -100,7 +104,13 @@ export class ServerTemplatesController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string | null; discordTemplateUrl?: string | null },
+    @Body() body: {
+      name?: string;
+      description?: string | null;
+      discordTemplateUrl?: string | null;
+      iconUrl?: string | null;
+      enableServerStats?: boolean;
+    },
   ) {
     await this.ensureTemplate(id);
     if (body.name !== undefined) {
@@ -114,9 +124,15 @@ export class ServerTemplatesController {
     if (body.discordTemplateUrl !== undefined) {
       await this.templateRepo.update(id, { discordTemplateUrl: body.discordTemplateUrl?.trim() || null });
     }
+    if (body.iconUrl !== undefined) {
+      await this.templateRepo.update(id, { iconUrl: body.iconUrl?.trim() || null });
+    }
+    if (body.enableServerStats !== undefined) {
+      await this.templateRepo.update(id, { enableServerStats: Boolean(body.enableServerStats) });
+    }
     return this.templateRepo.findOne({
       where: { id },
-      select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt', 'updatedAt'],
+      select: ['id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats', 'createdAt', 'updatedAt'],
     });
   }
 

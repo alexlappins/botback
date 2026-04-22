@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ServerStatsModule } from '../server-stats/server-stats.module';
 import { ServerTemplate } from './entities/server-template.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateChannel } from './entities/template-channel.entity';
@@ -29,6 +30,7 @@ import { TemplateInstallService } from './template-install.service';
       TemplateSticker,
       UserTemplateAccess,
     ]),
+    ServerStatsModule,
   ],
   controllers: [ServerTemplatesController, TemplateAccessController, TemplateAccessAdminController],
   providers: [TemplateInstallService, NoCacheInterceptor],

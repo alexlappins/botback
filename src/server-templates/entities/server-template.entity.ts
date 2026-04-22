@@ -30,6 +30,14 @@ export class ServerTemplate {
   @Column({ name: 'discord_template_url', type: 'varchar', length: 512, nullable: true })
   discordTemplateUrl: string | null;
 
+  /** URL иконки сервера (опционально). Бот установит её при развёртывании шаблона. */
+  @Column({ name: 'icon_url', type: 'varchar', length: 512, nullable: true })
+  iconUrl: string | null;
+
+  /** Включить статистику сервера (категория с 4 каналами-счётчиками) при установке шаблона */
+  @Column({ name: 'enable_server_stats', type: 'boolean', default: false })
+  enableServerStats: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

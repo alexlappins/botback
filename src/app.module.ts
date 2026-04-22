@@ -11,6 +11,7 @@ import { DiscordModule } from './discord/discord.module';
 import { LogsModule } from './logs/logs.module';
 import { MessageConstructorModule } from './message-constructor/message-constructor.module';
 import { ReactionRolesModule } from './reaction-roles/reaction-roles.module';
+import { ServerStatsModule } from './server-stats/server-stats.module';
 import { ServerTemplatesModule } from './server-templates/server-templates.module';
 import { StoreModule } from './store/store.module';
 import { TemplatesModule } from './templates/templates.module';
@@ -43,6 +44,7 @@ import { UploadModule } from './upload/upload.module';
     TemplatesModule,
     MessageConstructorModule,
     ReactionRolesModule,
+    ServerStatsModule,
     LogsModule,
     UploadModule,
   ],

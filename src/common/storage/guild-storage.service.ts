@@ -16,12 +16,23 @@ export type ReactionRoleBindings = Record<string, Record<string, string>>;
 /** messageId → channelId (для отображения в дашборде) */
 export type ReactionRoleChannels = Record<string, string>;
 
+/** Конфигурация статистики сервера: ID категории и 4 каналов-счётчиков */
+export interface ServerStatsConfig {
+  categoryId: string;
+  totalChannelId: string;
+  humansChannelId: string;
+  botsChannelId: string;
+  onlineChannelId: string;
+}
+
 export interface GuildConfig {
   logChannels?: LogChannelsConfig;
   /** Привязки "реакция на сообщение → роль" (эмодзи). По guild храним messageId -> { emojiKey -> roleId }. */
   reactionRoleBindings?: ReactionRoleBindings;
   /** Канал для каждого сообщения с привязками (messageId → channelId). */
   reactionRoleChannels?: ReactionRoleChannels;
+  /** Конфигурация статистики сервера (категория со счётчиками) */
+  serverStats?: ServerStatsConfig;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -107,6 +118,35 @@ export class GuildStorageService {
   getReactionRoleChannels(guildId: string): ReactionRoleChannels {
     this.ensureLoaded();
     return this.cache[guildId]?.reactionRoleChannels ?? {};
+  }
+
+  getServerStats(guildId: string): ServerStatsConfig | undefined {
+    return this.getConfig(guildId).serverStats;
+  }
+
+  setServerStats(guildId: string, config: ServerStatsConfig): void {
+    this.ensureLoaded();
+    if (!this.cache[guildId]) this.cache[guildId] = {};
+    this.cache[guildId].serverStats = config;
+    this.save();
+  }
+
+  removeServerStats(guildId: string): void {
+    this.ensureLoaded();
+    if (this.cache[guildId]?.serverStats) {
+      delete this.cache[guildId].serverStats;
+      this.save();
+    }
+  }
+
+  /** Все guild-ы у которых настроена статистика — для периодического апдейта */
+  listGuildsWithServerStats(): Array<{ guildId: string; config: ServerStatsConfig }> {
+    this.ensureLoaded();
+    const result: Array<{ guildId: string; config: ServerStatsConfig }> = [];
+    for (const [guildId, cfg] of Object.entries(this.cache)) {
+      if (cfg?.serverStats) result.push({ guildId, config: cfg.serverStats });
+    }
+    return result;
   }
 
   removeReactionRoleBinding(guildId: string, messageId: string, emojiKey: string): void {

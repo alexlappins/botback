@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import type { LogChannelsConfig } from '../common/storage/guild-storage.service';
 import { GuildStorageService } from '../common/storage/guild-storage.service';
 import { REACTION_ROLE_PREFIX } from '../reaction-roles/reaction-roles.commands';
+import { ServerStatsService } from '../server-stats/server-stats.service';
 import { ServerTemplate } from './entities/server-template.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateChannel } from './entities/template-channel.entity';
@@ -46,6 +47,7 @@ export class TemplateInstallService {
     @InjectRepository(TemplateSticker)
     private readonly stickerRepo: Repository<TemplateSticker>,
     private readonly storage: GuildStorageService,
+    private readonly serverStats: ServerStatsService,
   ) {}
 
   async check(guildId: string, templateId: string): Promise<TemplateInstallCheckReport> {
@@ -216,6 +218,15 @@ export class TemplateInstallService {
     const messageIdByKey = new Map<string, string>(); // key: channelName:messageOrder
 
     try {
+      // 0. Иконка сервера (best-effort — если не получилось, установка не падает)
+      if (template.iconUrl) {
+        try {
+          await guild.setIcon(template.iconUrl);
+        } catch (e) {
+          warnings.push(`Не удалось установить иконку сервера: ${(e as Error).message}`);
+        }
+      }
+
       // 1. Роли (сортируем по position)
       const roles = (template.roles ?? []).slice().sort((a, b) => a.position - b.position);
       for (const r of roles) {
@@ -229,6 +240,26 @@ export class TemplateInstallService {
         });
         roleIdByName.set(r.name, created.id);
         summary.rolesCreated += 1;
+      }
+
+      // 1.1. Пытаемся поднять роль бота выше всех управляемых ролей,
+      // чтобы кнопки авторолей могли выдавать эти роли без ошибок иерархии.
+      try {
+        const me = guild.members.me ?? (await guild.members.fetchMe());
+        const botManagedRole = me.roles.botRole; // managed role, привязанная к боту
+        if (botManagedRole) {
+          const maxNonManaged = Math.max(
+            1,
+            ...guild.roles.cache
+              .filter((r) => !r.managed && r.id !== guild.id)
+              .map((r) => r.position),
+          );
+          if (botManagedRole.position < maxNonManaged) {
+            await botManagedRole.setPosition(maxNonManaged).catch(() => null);
+          }
+        }
+      } catch {
+        // best-effort: если не получилось — пользователь может вручную поднять роль
       }
 
       // 2. Категории (Discord type 4)
@@ -291,20 +322,26 @@ export class TemplateInstallService {
           continue;
         }
 
-        const content = msg.content?.trim() || undefined;
         // embedJson и componentsJson могут лежать в БД и как объект/массив, и как строка
         // (фронт часто отправляет JSON-строкой) — нормализуем
-        // Для подстановки {{RoleName}} мёрджим роли созданные install'ом + уже существующие на гильдии
-        // (созданные Discord-шаблоном на Шаге 1).
+        // Для подстановки {{RoleName}} и {{#ChannelName}} мёрджим сущности созданные install'ом
+        // + уже существующие на гильдии (созданные Discord-шаблоном на Шаге 1).
         const roleMapForMsg = new Map<string, string>([
           ...guildRoleIdByName,
           ...roleIdByName, // свежесозданные имеют приоритет при совпадении имён
         ]);
+        const channelMapForMsg = new Map<string, string>([
+          ...guildChannelIdByName,
+          ...channelIdByName,
+        ]);
+        const ctx = { roleMap: roleMapForMsg, channelMap: channelMapForMsg };
+
+        const content = msg.content?.trim() ? this.replacePlaceholders(msg.content.trim(), ctx) : undefined;
         const embedRecord = coerceEmbedJsonField(msg.embedJson);
-        const embed = embedRecord ? this.buildEmbed(embedRecord, roleMapForMsg) : undefined;
+        const embed = embedRecord ? this.buildEmbed(embedRecord, ctx) : undefined;
         const componentsPayload = coerceComponentsJsonField(msg.componentsJson);
         const components = componentsPayload
-          ? this.buildComponents(componentsPayload, roleMapForMsg)
+          ? this.buildComponents(componentsPayload, ctx)
           : undefined;
 
         // Пропускаем полностью пустые сообщения — Discord не разрешает их отправлять
@@ -393,6 +430,15 @@ export class TemplateInstallService {
         }
       }
 
+      // 9. Статистика сервера (категория с 4 каналами-счётчиками)
+      if (template.enableServerStats) {
+        try {
+          await this.serverStats.setup(guildId);
+        } catch (e) {
+          warnings.push(`Не удалось настроить статистику сервера: ${(e as Error).message}`);
+        }
+      }
+
       return {
         ok: true,
         summary,
@@ -432,12 +478,17 @@ export class TemplateInstallService {
     const channel = guild.channels.cache.get(channelId);
     if (!channel?.isTextBased()) throw new Error('Канал не знайдено або це не текстовий канал');
 
-    const emptyRoleMap = new Map<string, string>();
+    // В превью плейсхолдеры не подставляем (ctx пустой) — пользователь увидит
+    // шаблон как есть, без реальных каналов/ролей.
+    const emptyCtx: PlaceholderContext = {
+      roleMap: new Map<string, string>(),
+      channelMap: new Map<string, string>(),
+    };
     const embedRecord = coerceEmbedJsonField(payload.embedJson);
-    const embed = embedRecord ? this.buildEmbed(embedRecord, emptyRoleMap) : undefined;
+    const embed = embedRecord ? this.buildEmbed(embedRecord, emptyCtx) : undefined;
     const componentsPayload = coerceComponentsJsonField(payload.componentsJson);
     const components = componentsPayload
-      ? this.buildComponents(componentsPayload, emptyRoleMap)
+      ? this.buildComponents(componentsPayload, emptyCtx)
       : undefined;
     const content = payload.content?.trim() ? payload.content.trim() : undefined;
     if (!content && !embed && !components) {
@@ -476,9 +527,9 @@ export class TemplateInstallService {
    * - footer: { text, icon_url | iconURL }
    * - image / thumbnail: строка URL или { url }
    * - fields: [ { name, value, inline } ] (до 25)
-   * Плейсхолдеры {{RoleName}} в текстах заменяются на id роли из шаблона.
+   * Плейсхолдеры: {{RoleName}} → id роли, {{#channel-name}} → <#channelId>.
    */
-  private buildEmbed(data: Record<string, unknown>, roleMap: Map<string, string>): EmbedBuilder | undefined {
+  private buildEmbed(data: Record<string, unknown>, ctx: PlaceholderContext): EmbedBuilder | undefined {
     const raw = unwrapEmbedPayload(data);
     if (!raw) return undefined;
 
@@ -486,14 +537,14 @@ export class TemplateInstallService {
     let hasContent = false;
 
     if (typeof raw.title === 'string' && raw.title.trim()) {
-      embed.setTitle(this.replaceRolePlaceholders(raw.title, roleMap));
+      embed.setTitle(this.replacePlaceholders(raw.title, ctx));
       hasContent = true;
     }
     if (typeof raw.url === 'string' && raw.url.trim()) {
       embed.setURL(raw.url.trim());
     }
     if (typeof raw.description === 'string' && raw.description.length) {
-      embed.setDescription(this.replaceRolePlaceholders(raw.description, roleMap));
+      embed.setDescription(this.replacePlaceholders(raw.description, ctx));
       hasContent = true;
     }
 
@@ -506,7 +557,7 @@ export class TemplateInstallService {
     if (raw.author && typeof raw.author === 'object') {
       const a = raw.author as Record<string, unknown>;
       const name =
-        typeof a.name === 'string' ? this.replaceRolePlaceholders(a.name, roleMap).trim() : '';
+        typeof a.name === 'string' ? this.replacePlaceholders(a.name, ctx).trim() : '';
       if (name) {
         const iconUrl = pickString(a, 'icon_url', 'iconURL');
         const url = typeof a.url === 'string' ? a.url.trim() : undefined;
@@ -518,7 +569,7 @@ export class TemplateInstallService {
     if (raw.footer && typeof raw.footer === 'object') {
       const f = raw.footer as Record<string, unknown>;
       const text =
-        typeof f.text === 'string' ? this.replaceRolePlaceholders(f.text, roleMap).trim() : '';
+        typeof f.text === 'string' ? this.replacePlaceholders(f.text, ctx).trim() : '';
       if (text) {
         const iconUrl = pickString(f, 'icon_url', 'iconURL');
         embed.setFooter({ text, iconURL: iconUrl });
@@ -545,11 +596,11 @@ export class TemplateInstallService {
         .map((f) => ({
           name:
             typeof f.name === 'string'
-              ? this.replaceRolePlaceholders(f.name, roleMap).trim() || '\u200b'
+              ? this.replacePlaceholders(f.name, ctx).trim() || '\u200b'
               : '\u200b',
           value:
             typeof f.value === 'string'
-              ? this.replaceRolePlaceholders(f.value, roleMap)
+              ? this.replacePlaceholders(f.value, ctx)
               : '\u200b',
           inline: Boolean(f.inline),
         }));
@@ -577,9 +628,17 @@ export class TemplateInstallService {
     return embed;
   }
 
-  private replaceRolePlaceholders(text: string, roleMap: Map<string, string>): string {
+  /**
+   * Подставляет плейсхолдеры в текст:
+   * - `{{RoleName}}` → id роли (из roleMap)
+   * - `{{#channel-name}}` → `<#channelId>` (Discord-меншн канала, становится кликабельной ссылкой)
+   */
+  private replacePlaceholders(text: string, ctx: PlaceholderContext): string {
     let out = text;
-    for (const [name, id] of roleMap) {
+    for (const [name, id] of ctx.channelMap) {
+      out = out.replace(new RegExp(`\\{\\{#${escapeRegex(name)}\\}\\}`, 'g'), `<#${id}>`);
+    }
+    for (const [name, id] of ctx.roleMap) {
       out = out.replace(new RegExp(`\\{\\{${escapeRegex(name)}\\}\\}`, 'g'), id);
     }
     return out;
@@ -587,7 +646,7 @@ export class TemplateInstallService {
 
   private buildComponents(
     data: unknown[],
-    roleMap: Map<string, string>,
+    ctx: PlaceholderContext,
   ): ActionRowBuilder<ButtonBuilder>[] | undefined {
     if (!Array.isArray(data)) return undefined;
     const rows: ActionRowBuilder<ButtonBuilder>[] = [];
@@ -604,13 +663,15 @@ export class TemplateInstallService {
           emoji?: string | { id?: string; name?: string; animated?: boolean };
         };
         if (c?.type !== 2) continue;
+        // В customId подставляем только id роли (без <#…>/<@&…> синтаксиса)
         let customId = (c.customId ?? '').toString();
-        for (const [name, id] of roleMap) {
+        for (const [name, id] of ctx.roleMap) {
           customId = customId.replace(new RegExp(`\\{\\{${escapeRegex(name)}\\}\\}`, 'g'), id);
         }
+        const label = typeof c.label === 'string' ? this.replacePlaceholders(c.label, ctx) : 'Роль';
         const btn = new ButtonBuilder()
           .setCustomId(customId)
-          .setLabel((c.label as string) ?? 'Роль')
+          .setLabel(label)
           .setStyle((c.style as ButtonStyle) ?? ButtonStyle.Primary);
         if (c.emoji !== undefined && c.emoji !== null) {
           if (typeof c.emoji === 'string') {
@@ -720,6 +781,12 @@ function normalizeSkipped(skipped: TemplateInstallSkipped): TemplateInstallSkipp
     reactionRoleMissingRole: unique(skipped.reactionRoleMissingRole),
     logChannelMissing: unique(skipped.logChannelMissing),
   };
+}
+
+/** Контекст для подстановки плейсхолдеров в тексте сообщений / кнопок при установке */
+interface PlaceholderContext {
+  roleMap: Map<string, string>;
+  channelMap: Map<string, string>;
 }
 
 export type TemplateInstallSummary = {

@@ -123,11 +123,17 @@ export class ReactionRolesComponents {
         ephemeral: true,
       });
     } catch (e) {
-      const err = e as Error;
-      return interaction.reply({
-        content: `Ошибка: ${err.message}. Убедись, что роль бота выше роли «${role.name}» в настройках сервера.`,
-        ephemeral: true,
-      });
+      console.error(`[ReactionRoles] Failed to toggle role ${role.id} for ${member.id}:`, e);
+      // Пытаемся тихо подтвердить взаимодействие, чтобы пользователь не видел
+      // технических ошибок о правах бота
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.deferUpdate();
+        } catch {
+          // интеракция истекла — ничего не поделать
+        }
+      }
+      return;
     }
   }
 
