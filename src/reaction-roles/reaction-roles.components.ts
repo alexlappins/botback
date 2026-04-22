@@ -123,14 +123,55 @@ export class ReactionRolesComponents {
         ephemeral: true,
       });
     } catch (e) {
-      console.error(`[ReactionRoles] Failed to toggle role ${role.id} for ${member.id}:`, e);
-      // Пытаемся тихо подтвердить взаимодействие, чтобы пользователь не видел
-      // технических ошибок о правах бота
+      // Подробная диагностика: почему именно не получилось
+      const me = interaction.guild.members.me;
+      const botHighest = me?.roles.highest;
+      const botRole = me?.roles.botRole;
+      const hasManageRoles = me?.permissions.has('ManageRoles');
+      const hasAdmin = me?.permissions.has('Administrator');
+      console.error(
+        `[ReactionRoles] Failed to toggle role on ${interaction.guild.name} (${interaction.guild.id}):\n` +
+          `  target role: "${role.name}" (${role.id}), position=${role.position}\n` +
+          `  bot highest: "${botHighest?.name}" (${botHighest?.id}), position=${botHighest?.position}\n` +
+          `  bot managed: "${botRole?.name}" (${botRole?.id}), position=${botRole?.position}\n` +
+          `  permissions: ManageRoles=${hasManageRoles}, Administrator=${hasAdmin}\n` +
+          `  error:`,
+        e,
+      );
+
+      // Пытаемся автоматически исправить: опустить целевую роль под ботом
+      // (если у бота есть права и его роль выше)
+      if (
+        botHighest &&
+        role.position >= botHighest.position &&
+        (hasManageRoles || hasAdmin)
+      ) {
+        console.log(
+          `[ReactionRoles] Attempting to lower role "${role.name}" below bot position ${botHighest.position}`,
+        );
+        try {
+          await role.setPosition(Math.max(1, botHighest.position - 1));
+          // Retry
+          if (mode === 'give' || (mode === 'toggle' && !hasRole)) {
+            await member.roles.add(roleId);
+          } else {
+            await member.roles.remove(roleId);
+          }
+          return interaction.reply({
+            content: `Роль **${role.name}** ${mode === 'take' || (mode === 'toggle' && hasRole) ? 'снята' : 'выдана'}.`,
+            ephemeral: true,
+          });
+        } catch (retryErr) {
+          console.error(`[ReactionRoles] Retry also failed:`, retryErr);
+        }
+      }
+
+      // Тихо закрываем интеракцию без сообщений пользователю
       if (!interaction.replied && !interaction.deferred) {
         try {
           await interaction.deferUpdate();
         } catch {
-          // интеракция истекла — ничего не поделать
+          // интеракция истекла
         }
       }
       return;

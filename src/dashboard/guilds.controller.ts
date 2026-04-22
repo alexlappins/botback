@@ -207,6 +207,21 @@ export class GuildsController {
     return result;
   }
 
+  /**
+   * Пытаемся автоматически поднять роль бота на сервере, используя OAuth-токен
+   * пользователя (он владелец сервера и имеет достаточно прав).
+   * Если Discord отвергнет user Bearer token — возвращаем { ok: false, needsManual: true }.
+   */
+  @Post(':id/lift-bot-role')
+  async liftBotRole(
+    @Param('id') guildId: string,
+    @Req() req: Request,
+  ): Promise<{ ok: boolean; needsManual?: boolean; message?: string }> {
+    await this.ensureGuildAccess(guildId, req);
+    const user = this.getUser(req);
+    return this.guilds.liftBotRoleViaUserToken(guildId, user.accessToken);
+  }
+
   @Post(':id/install-template/check')
   async installTemplateCheck(
     @Param('id') guildId: string,

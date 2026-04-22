@@ -236,4 +236,69 @@ export class GuildsService {
     }
     await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
   }
+
+  /**
+   * Поднимает роль бота на сервере через user OAuth Bearer token.
+   * Владелец сервера имеет право двигать любые роли — эксплуатируем это.
+   *
+   * Discord может не принять user Bearer token для этого endpoint-а — в таком случае
+   * возвращаем { ok: false, needsManual: true }, чтобы фронт показал инструкцию.
+   */
+  async liftBotRoleViaUserToken(
+    guildId: string,
+    userAccessToken: string,
+  ): Promise<{ ok: boolean; needsManual?: boolean; message?: string }> {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return { ok: false, message: 'Сервер не найден в кэше бота' };
+
+    await guild.roles.fetch().catch(() => null);
+    const botUserId = this.client.user?.id;
+    if (!botUserId) return { ok: false, message: 'Бот не авторизован' };
+
+    // Ищем managed-роль, привязанную к боту
+    const botRole = guild.roles.cache.find(
+      (r) => r.managed && r.tags?.botId === botUserId,
+    );
+    if (!botRole) return { ok: false, message: 'Роль бота не найдена на сервере' };
+
+    // Считаем куда поднимать — выше всех немоделируемых ролей
+    const maxNonManaged = Math.max(
+      1,
+      ...guild.roles.cache
+        .filter((r) => !r.managed && r.id !== guild.id)
+        .map((r) => r.position),
+    );
+    const targetPosition = maxNonManaged + 1;
+
+    if (botRole.position >= targetPosition) {
+      return { ok: true, message: 'Роль бота уже выше всех шаблонных ролей' };
+    }
+
+    // PATCH /guilds/:id/roles с user Bearer token — если Discord разрешит
+    const res = await fetch(`${DISCORD_API}/guilds/${guildId}/roles`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${userAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([{ id: botRole.id, position: targetPosition }]),
+    });
+
+    if (res.ok) {
+      return { ok: true, message: 'Роль бота поднята автоматически' };
+    }
+
+    // 401/403 — user Bearer не принят этим endpoint-ом. Возвращаем needsManual
+    // чтобы фронт показал инструкцию "перетащите роль бота вручную"
+    const body = await res.text().catch(() => '');
+    console.warn(
+      `[liftBotRole] Discord rejected user Bearer (${res.status}): ${body.slice(0, 200)}`,
+    );
+    return {
+      ok: false,
+      needsManual: true,
+      message:
+        'Discord не разрешил боту обновить иерархию автоматически. Нужно один раз перетащить роль бота наверх вручную.',
+    };
+  }
 }

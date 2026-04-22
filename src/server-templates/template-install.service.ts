@@ -276,19 +276,67 @@ export class TemplateInstallService {
           }
         }
 
-        // Fallback: если поднять роль бота не вышло — опускаем все шаблонные роли под ботом
-        if (!liftOk && botHighest && roleIdByName.size > 0) {
-          const targetPosition = Math.max(1, botHighest.position - 1);
-          const positions = [...roleIdByName.values()].map((roleId, idx) => ({
-            role: roleId,
-            position: Math.max(1, targetPosition - idx),
-          }));
-          await guild.roles.setPositions(positions).catch((err) => {
-            warnings.push(
-              `Не удалось опустить роли шаблона под роль бота: ${(err as Error).message}. ` +
-                'Перетащите роль бота выше шаблонных ролей вручную в настройках сервера.',
+        // Fallback: если поднять роль бота не вышло — опускаем ВСЕ роли, на которые
+        // ссылаются кнопки авторолей (включая роли от Discord-шаблона), под роль бота
+        if (!liftOk && botHighest) {
+          // Собираем имена ролей из componentsJson всех сообщений шаблона
+          const referencedRoleNames = new Set<string>();
+          for (const msg of template.messages ?? []) {
+            const components = coerceComponentsJsonField(msg.componentsJson);
+            if (!components) continue;
+            for (const row of components) {
+              if (!row || typeof row !== 'object') continue;
+              const rowComps = (row as { components?: unknown[] }).components;
+              if (!Array.isArray(rowComps)) continue;
+              for (const c of rowComps) {
+                const cid = (c as { customId?: string })?.customId;
+                if (typeof cid !== 'string') continue;
+                // Ищем {{RoleName}} в customId
+                const matches = cid.matchAll(/\{\{([^}#][^}]*)\}\}/g);
+                for (const m of matches) referencedRoleNames.add(m[1]);
+              }
+            }
+          }
+          // + все роли, на которые ссылаются reactionRoles
+          for (const rr of template.reactionRoles ?? []) {
+            if (rr.roleName) referencedRoleNames.add(rr.roleName);
+          }
+
+          // Резолвим имена → реальные ID (из наших + с гильдии)
+          const guildRoleByName = new Map(
+            guild.roles.cache
+              .filter((r) => !r.managed && r.id !== guild.id)
+              .map((r) => [r.name, r] as const),
+          );
+          const rolesToLower: string[] = [];
+          for (const name of referencedRoleNames) {
+            const id = roleIdByName.get(name) ?? guildRoleByName.get(name)?.id;
+            if (!id) continue;
+            const r = guild.roles.cache.get(id);
+            if (!r || r.managed) continue;
+            if (r.position >= botHighest.position) rolesToLower.push(id);
+          }
+
+          if (rolesToLower.length > 0) {
+            const targetPosition = Math.max(1, botHighest.position - 1);
+            const positions = rolesToLower.map((roleId, idx) => ({
+              role: roleId,
+              position: Math.max(1, targetPosition - idx),
+            }));
+            console.log(
+              `[TemplateInstall] Lowering ${rolesToLower.length} referenced roles below bot position ${botHighest.position}`,
             );
-          });
+            await guild.roles.setPositions(positions).catch((err) => {
+              warnings.push(
+                `Не удалось опустить роли под роль бота: ${(err as Error).message}. ` +
+                  'Перетащите роль бота выше всех шаблонных ролей вручную в настройках сервера.',
+              );
+            });
+          } else {
+            console.log(
+              `[TemplateInstall] No referenced roles need lowering (all below bot position ${botHighest.position})`,
+            );
+          }
         }
       } catch (e) {
         warnings.push(
