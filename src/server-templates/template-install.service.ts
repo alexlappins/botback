@@ -514,6 +514,10 @@ export class TemplateInstallService {
       }
 
       // 9. Статистика сервера (категория с 4 каналами-счётчиками)
+      console.log(
+        `[TemplateInstall] step 9 — enableServerStats=${template.enableServerStats}, ` +
+          `names: cat="${template.statsCategoryName}" total="${template.statsTotalName}"`,
+      );
       if (template.enableServerStats) {
         try {
           await this.serverStats.setup(guildId, {
@@ -523,8 +527,11 @@ export class TemplateInstallService {
             botsName: template.statsBotsName ?? undefined,
             onlineName: template.statsOnlineName ?? undefined,
           });
+          console.log('[TemplateInstall] server stats setup completed');
         } catch (e) {
-          warnings.push(`Не удалось настроить статистику сервера: ${(e as Error).message}`);
+          const msg = (e as Error).message;
+          console.error('[TemplateInstall] server stats setup FAILED:', e);
+          warnings.push(`Не удалось настроить статистику сервера: ${msg}`);
         }
       }
 

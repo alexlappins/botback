@@ -51,27 +51,46 @@ export class ServerStatsService {
     templates: StatsNameTemplates = {},
   ): Promise<ServerStatsConfig> {
     const names = { ...DEFAULT_NAMES, ...stripEmpty(templates) };
+    this.logger.log(
+      `[ServerStats] setup(${guildId}) — names: category="${names.categoryName}" total="${names.totalName}"`,
+    );
 
     const existing = this.storage.getServerStats(guildId);
     if (existing) {
       const guild = await this.resolveGuild(guildId);
       if (guild && guild.channels.cache.get(existing.categoryId)) {
+        this.logger.log(
+          `[ServerStats] existing config found for ${guildId}, category still exists — updating name templates only`,
+        );
         // Обновим шаблоны имён в хранилище, чтобы новые применились при следующем апдейте
         this.storage.setServerStats(guildId, { ...existing, nameTemplates: templates });
+        // Сразу применим новые имена (не ждать крон)
+        await this.updateGuild(guild, { ...existing, nameTemplates: templates }).catch((e) =>
+          this.logger.warn(`[ServerStats] immediate rename failed: ${(e as Error).message}`),
+        );
         return existing;
       }
-      // категории больше нет — продолжаем и создадим заново
+      this.logger.log(
+        `[ServerStats] stale config for ${guildId} — category not found, will recreate`,
+      );
+      // сбрасываем старый stale конфиг
+      this.storage.removeServerStats(guildId);
     }
 
     const guild = await this.resolveGuild(guildId);
-    if (!guild) throw new Error('Guild not found');
+    if (!guild) {
+      this.logger.error(`[ServerStats] cannot resolve guild ${guildId}`);
+      throw new Error('Guild not found');
+    }
 
     // Категория в самом верху (position = 0)
+    this.logger.log(`[ServerStats] creating category "${names.categoryName}" in guild ${guild.id}`);
     const category = await guild.channels.create({
       name: names.categoryName,
       type: ChannelType.GuildCategory,
       position: 0,
     });
+    this.logger.log(`[ServerStats] category created: id=${category.id}`);
 
     // Четыре голосовых канала (чтобы участники не могли зайти — только видеть название)
     const denyConnect = [
