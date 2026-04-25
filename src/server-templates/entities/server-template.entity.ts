@@ -7,6 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { TemplateCategory } from './template-category.entity';
+import { TemplateCategoryGrant } from './template-category-grant.entity';
 import { TemplateChannel } from './template-channel.entity';
 import { TemplateEmoji } from './template-emoji.entity';
 import { TemplateLogChannel } from './template-log-channel.entity';
@@ -87,4 +88,7 @@ export class ServerTemplate {
 
   @OneToMany(() => TemplateSticker, (s) => s.template)
   stickers: TemplateSticker[];
+
+  @OneToMany(() => TemplateCategoryGrant, (g) => g.template)
+  categoryGrants: TemplateCategoryGrant[];
 }

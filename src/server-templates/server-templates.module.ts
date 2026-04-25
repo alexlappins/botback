@@ -7,6 +7,7 @@ import { TemplateChannel } from './entities/template-channel.entity';
 import { TemplateLogChannel } from './entities/template-log-channel.entity';
 import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
+import { TemplateCategoryGrant } from './entities/template-category-grant.entity';
 import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
@@ -28,6 +29,7 @@ import { TemplateInstallService } from './template-install.service';
       TemplateLogChannel,
       TemplateEmoji,
       TemplateSticker,
+      TemplateCategoryGrant,
       UserTemplateAccess,
     ]),
     ServerStatsModule,

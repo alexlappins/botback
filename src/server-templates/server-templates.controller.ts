@@ -23,6 +23,7 @@ import type { TemplatePermissionOverwrite } from './entities/template-channel.en
 import { TemplateLogChannel } from './entities/template-log-channel.entity';
 import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
+import { TemplateCategoryGrant } from './entities/template-category-grant.entity';
 import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
@@ -44,6 +45,7 @@ export class ServerTemplatesController {
     @InjectRepository(TemplateLogChannel) private readonly logChannelRepo: Repository<TemplateLogChannel>,
     @InjectRepository(TemplateEmoji) private readonly emojiRepo: Repository<TemplateEmoji>,
     @InjectRepository(TemplateSticker) private readonly stickerRepo: Repository<TemplateSticker>,
+    @InjectRepository(TemplateCategoryGrant) private readonly categoryGrantRepo: Repository<TemplateCategoryGrant>,
   ) {}
 
   private async ensureTemplate(id: string): Promise<ServerTemplate> {
@@ -96,6 +98,7 @@ export class ServerTemplatesController {
       .leftJoinAndSelect('t.logChannels', 'logChannels')
       .leftJoinAndSelect('t.emojis', 'emojis')
       .leftJoinAndSelect('t.stickers', 'stickers')
+      .leftJoinAndSelect('t.categoryGrants', 'categoryGrants')
       .getOne();
     if (!template) throw new NotFoundException('Template not found');
     return template;
@@ -571,6 +574,33 @@ export class ServerTemplatesController {
     await this.ensureTemplate(id);
     const result = await this.stickerRepo.delete({ id: stickerId, templateId: id });
     if (result.affected === 0) throw new NotFoundException('Sticker not found');
+    return { ok: true };
+  }
+
+  // ——— Category grants (привязка категорий к роли верификации) ———
+  @Get(':id/category-grants')
+  async getCategoryGrants(@Param('id') id: string) {
+    await this.ensureTemplate(id);
+    return this.categoryGrantRepo.find({ where: { templateId: id }, order: { categoryName: 'ASC' } });
+  }
+
+  @Post(':id/category-grants')
+  async addCategoryGrant(@Param('id') id: string, @Body() body: { categoryName: string }) {
+    await this.ensureTemplate(id);
+    const categoryName = body?.categoryName?.trim();
+    if (!categoryName) throw new BadRequestException('categoryName required');
+    const exists = await this.categoryGrantRepo.findOne({ where: { templateId: id, categoryName } });
+    if (exists) return exists;
+    const grant = this.categoryGrantRepo.create({ templateId: id, categoryName });
+    await this.categoryGrantRepo.save(grant);
+    return grant;
+  }
+
+  @Delete(':id/category-grants/:grantId')
+  async removeCategoryGrant(@Param('id') id: string, @Param('grantId') grantId: string) {
+    await this.ensureTemplate(id);
+    const result = await this.categoryGrantRepo.delete({ id: grantId, templateId: id });
+    if (result.affected === 0) throw new NotFoundException('Grant not found');
     return { ok: true };
   }
 }

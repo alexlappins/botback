@@ -357,6 +357,54 @@ export class TemplateInstallService {
         summary.categoriesCreated += 1;
       }
 
+      // 2.1. Права верификационной роли на выбранные категории.
+      // Берём ПЕРВУЮ роль из шаблона (по позиции) — она и есть верификационная.
+      // Открываем для неё ViewChannel + SendMessages только в категориях из categoryGrants,
+      // запрещаем @everyone видеть эти категории. Остальные категории не трогаем.
+      const grants = template.categoryGrants ?? [];
+      if (grants.length > 0) {
+        const firstRole = (template.roles ?? []).slice().sort((a, b) => a.position - b.position)[0];
+        const firstRoleId = firstRole ? roleIdByName.get(firstRole.name) : undefined;
+        if (!firstRoleId) {
+          warnings.push(
+            'Привязки категорий заданы, но в шаблоне нет ролей — добавьте роль (она станет верификационной).',
+          );
+        } else {
+          const { PermissionsBitField } = await import('discord.js');
+          for (const g of grants) {
+            const categoryId = categoryIdByName.get(g.categoryName);
+            if (!categoryId) {
+              warnings.push(
+                `Категория "${g.categoryName}" не найдена в шаблоне — права для неё не выставлены.`,
+              );
+              continue;
+            }
+            const cat = guild.channels.cache.get(categoryId);
+            if (!cat || cat.type !== ChannelType.GuildCategory) continue;
+            try {
+              await cat.permissionOverwrites.set([
+                {
+                  id: guild.roles.everyone.id,
+                  deny: [PermissionsBitField.Flags.ViewChannel],
+                },
+                {
+                  id: firstRoleId,
+                  allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages,
+                    PermissionsBitField.Flags.ReadMessageHistory,
+                  ],
+                },
+              ]);
+            } catch (e) {
+              warnings.push(
+                `Не удалось выставить права для категории "${g.categoryName}": ${(e as Error).message}`,
+              );
+            }
+          }
+        }
+      }
+
       // 3. Каналы (не категории): text, voice и т.д.
       const channels = (template.channels ?? []).slice().sort((a, b) => a.position - b.position);
       for (const ch of channels) {
@@ -610,6 +658,7 @@ export class TemplateInstallService {
         logChannels: true,
         emojis: true,
         stickers: true,
+        categoryGrants: true,
       },
     });
   }
