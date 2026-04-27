@@ -9,43 +9,43 @@ export class ServerStatsCommands {
 
   @SlashCommand({
     name: 'serverstats-enable',
-    description: 'Включить статистику сервера: категория с 4 каналами-счётчиками',
+    description: 'Enable server stats: category with 4 counter channels',
     defaultMemberPermissions: '8', // ADMINISTRATOR
   })
   async onEnable(@Context() [interaction]: SlashCommandContext) {
     await interaction.deferReply({ ephemeral: true });
     if (!interaction.guildId) {
-      return interaction.editReply({ content: 'Команда только для сервера.' });
+      return interaction.editReply({ content: 'Server only.' });
     }
     try {
       await this.stats.setup(interaction.guildId);
       return interaction.editReply({
         content:
-          'Статистика включена. Категория и 4 канала-счётчика созданы вверху. Обновление — раз в 10 минут.',
+          'Stats enabled. Category and 4 counter channels created at the top. Updates every 10 minutes.',
       });
     } catch (e) {
       return interaction.editReply({
-        content: `Не удалось создать статистику: ${(e as Error).message}`,
+        content: `Failed to create stats: ${(e as Error).message}`,
       });
     }
   }
 
   @SlashCommand({
     name: 'serverstats-disable',
-    description: 'Отключить статистику сервера (удалить категорию и каналы-счётчики)',
+    description: 'Disable server stats (delete the category and counter channels)',
     defaultMemberPermissions: '8',
   })
   async onDisable(@Context() [interaction]: SlashCommandContext) {
     await interaction.deferReply({ ephemeral: true });
     if (!interaction.guildId) {
-      return interaction.editReply({ content: 'Команда только для сервера.' });
+      return interaction.editReply({ content: 'Server only.' });
     }
     try {
       await this.stats.disable(interaction.guildId);
-      return interaction.editReply({ content: 'Статистика отключена — каналы удалены.' });
+      return interaction.editReply({ content: 'Stats disabled — channels removed.' });
     } catch (e) {
       return interaction.editReply({
-        content: `Ошибка отключения: ${(e as Error).message}`,
+        content: `Disable error: ${(e as Error).message}`,
       });
     }
   }

@@ -48,14 +48,14 @@ export class ReactionRolesComponents {
   ) {
     if (!interaction.guild || !interaction.member) {
       return interaction.reply({
-        content: 'Команду можно использовать только на сервере.',
+        content: 'This command can only be used on a server.',
         ephemeral: true,
       });
     }
 
     if (roleId.startsWith('{{') && roleId.endsWith('}}')) {
       return interaction.reply({
-        content: 'Эта кнопка отправлена через превью — роль не была подставлена. Установите шаблон для получения рабочих кнопок.',
+        content: 'This button was sent via preview — the role was not substituted. Install the template to get working buttons.',
         ephemeral: true,
       });
     }
@@ -65,7 +65,7 @@ export class ReactionRolesComponents {
       (await interaction.guild.members.fetch(interaction.user.id).catch(() => null));
     if (!member) {
       return interaction.reply({
-        content: 'Не удалось найти участника.',
+        content: 'Failed to find member.',
         ephemeral: true,
       });
     }
@@ -75,7 +75,7 @@ export class ReactionRolesComponents {
       (await interaction.guild.roles.fetch(roleId).catch(() => null));
     if (!role) {
       return interaction.reply({
-        content: 'Роль не найдена на сервере.',
+        content: 'Role not found on the server.',
         ephemeral: true,
       });
     }
@@ -86,26 +86,26 @@ export class ReactionRolesComponents {
       if (mode === 'give') {
         if (hasRole) {
           return interaction.reply({
-            content: `Роль **${role.name}** у вас уже есть.`,
+            content: `You already have the **${role.name}** role.`,
             ephemeral: true,
           });
         }
         await member.roles.add(roleId);
         return interaction.reply({
-          content: `Роль **${role.name}** выдана.`,
+          content: `Role **${role.name}** granted.`,
           ephemeral: true,
         });
       }
       if (mode === 'take') {
         if (!hasRole) {
           return interaction.reply({
-            content: `Роль **${role.name}** у вас не была выдана.`,
+            content: `You did not have the **${role.name}** role.`,
             ephemeral: true,
           });
         }
         await member.roles.remove(roleId);
         return interaction.reply({
-          content: `Роль **${role.name}** снята.`,
+          content: `Role **${role.name}** removed.`,
           ephemeral: true,
         });
       }
@@ -113,13 +113,13 @@ export class ReactionRolesComponents {
       if (hasRole) {
         await member.roles.remove(roleId);
         return interaction.reply({
-          content: `Роль **${role.name}** снята.`,
+          content: `Role **${role.name}** removed.`,
           ephemeral: true,
         });
       }
       await member.roles.add(roleId);
       return interaction.reply({
-        content: `Роль **${role.name}** выдана.`,
+        content: `Role **${role.name}** granted.`,
         ephemeral: true,
       });
     } catch (e) {
@@ -158,7 +158,7 @@ export class ReactionRolesComponents {
             await member.roles.remove(roleId);
           }
           return interaction.reply({
-            content: `Роль **${role.name}** ${mode === 'take' || (mode === 'toggle' && hasRole) ? 'снята' : 'выдана'}.`,
+            content: `Role **${role.name}** ${mode === 'take' || (mode === 'toggle' && hasRole) ? 'removed' : 'granted'}.`,
             ephemeral: true,
           });
         } catch (retryErr) {

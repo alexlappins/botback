@@ -25,11 +25,11 @@ export interface StatsNameTemplates {
 }
 
 const DEFAULT_NAMES: Required<StatsNameTemplates> = {
-  categoryName: '📊 Статистика сервера',
-  totalName: '👥 Всего: {count}',
-  humansName: '👤 Люди: {count}',
-  botsName: '🤖 Боты: {count}',
-  onlineName: '🟢 В сети: {count}',
+  categoryName: '📊 Server Stats',
+  totalName: '👥 Total: {count}',
+  humansName: '👤 Humans: {count}',
+  botsName: '🤖 Bots: {count}',
+  onlineName: '🟢 Online: {count}',
 };
 
 @Injectable()

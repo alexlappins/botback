@@ -8,7 +8,7 @@ import { PostMessageDto } from './dto/post-message.dto';
 export class MessageConstructorCommands {
   @SlashCommand({
     name: 'post',
-    description: 'Опубликовать оформленное сообщение от имени бота (конструктор сообщений)',
+    description: 'Post a formatted message as the bot (message constructor)',
   })
   async onPost(
     @Context() [interaction]: SlashCommandContext,
@@ -19,7 +19,7 @@ export class MessageConstructorCommands {
     const channel = interaction.guild?.channels.cache.get(dto.channel.id);
     if (!channel?.isTextBased()) {
       return interaction.editReply({
-        content: 'Укажите текстовый канал.',
+        content: 'Please specify a text channel.',
       });
     }
 
@@ -40,7 +40,7 @@ export class MessageConstructorCommands {
     await (channel as import('discord.js').TextChannel).send({ embeds: [embed] });
 
     return interaction.editReply({
-      content: `Сообщение опубликовано в канал <#${dto.channel.id}>.`,
+      content: `Message posted in channel <#${dto.channel.id}>.`,
     });
   }
 }

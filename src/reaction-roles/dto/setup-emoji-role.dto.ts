@@ -2,29 +2,29 @@ import { ChannelOption, RoleOption, StringOption } from 'necord';
 
 export class SetupEmojiRoleDto {
   @ChannelOption({
-    name: 'канал',
-    description: 'Канал, в котором находится сообщение',
+    name: 'channel',
+    description: 'Channel that contains the message',
     required: true,
   })
   channel: { id: string };
 
   @StringOption({
-    name: 'id_сообщения',
-    description: 'ID сообщения (ПКМ по сообщению → Копировать ссылку → последняя часть ссылки)',
+    name: 'message_id',
+    description: 'Message ID (right-click message > Copy Link > last part of the link)',
     required: true,
   })
   messageId: string;
 
   @StringOption({
-    name: 'эмодзи',
-    description: 'Эмодзи (например ✅ или для кастомного: имя:id)',
+    name: 'emoji',
+    description: 'Emoji (e.g. checkmark, or for custom: name:id)',
     required: true,
   })
   emoji: string;
 
   @RoleOption({
-    name: 'роль',
-    description: 'Роль, которую выдавать по реакции',
+    name: 'role',
+    description: 'Role to grant on reaction',
     required: true,
   })
   role: { id: string; name: string };

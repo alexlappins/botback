@@ -124,10 +124,10 @@ export class GuildsService {
       permissions: string;
       owner: boolean;
     }>;
-    console.log(`[GuildsService] Discord вернул ${guilds.length} серверов пользователя`);
+    console.log(`[GuildsService] Discord returned ${guilds.length} user guilds`);
 
     const botGuildIds = new Set(this.client.guilds.cache.map((g) => g.id));
-    console.log(`[GuildsService] Бот сейчас на ${botGuildIds.size} серверах:`, [...botGuildIds]);
+    console.log(`[GuildsService] Bot is currently on ${botGuildIds.size} servers:`, [...botGuildIds]);
 
     const result: DiscordGuild[] = [];
     for (const g of guilds) {
@@ -148,7 +148,7 @@ export class GuildsService {
       if (!hasPermission) continue;
       if (botInGuild) result.push(g);
     }
-    console.log(`[GuildsService] Итого подходит: ${result.length}`);
+    console.log(`[GuildsService] Total matched: ${result.length}`);
     return result;
   }
 
@@ -249,17 +249,17 @@ export class GuildsService {
     userAccessToken: string,
   ): Promise<{ ok: boolean; needsManual?: boolean; message?: string }> {
     const guild = this.client.guilds.cache.get(guildId);
-    if (!guild) return { ok: false, message: 'Сервер не найден в кэше бота' };
+    if (!guild) return { ok: false, message: 'Server not found in bot cache' };
 
     await guild.roles.fetch().catch(() => null);
     const botUserId = this.client.user?.id;
-    if (!botUserId) return { ok: false, message: 'Бот не авторизован' };
+    if (!botUserId) return { ok: false, message: 'Bot is not authorized' };
 
     // Ищем managed-роль, привязанную к боту
     const botRole = guild.roles.cache.find(
       (r) => r.managed && r.tags?.botId === botUserId,
     );
-    if (!botRole) return { ok: false, message: 'Роль бота не найдена на сервере' };
+    if (!botRole) return { ok: false, message: 'Bot role not found on the server' };
 
     // Считаем куда поднимать — выше всех немоделируемых ролей
     const maxNonManaged = Math.max(
@@ -271,7 +271,7 @@ export class GuildsService {
     const targetPosition = maxNonManaged + 1;
 
     if (botRole.position >= targetPosition) {
-      return { ok: true, message: 'Роль бота уже выше всех шаблонных ролей' };
+      return { ok: true, message: 'Bot role is already above all template roles' };
     }
 
     // PATCH /guilds/:id/roles с user Bearer token — если Discord разрешит
@@ -285,7 +285,7 @@ export class GuildsService {
     });
 
     if (res.ok) {
-      return { ok: true, message: 'Роль бота поднята автоматически' };
+      return { ok: true, message: 'Bot role lifted automatically' };
     }
 
     // 401/403 — user Bearer не принят этим endpoint-ом. Возвращаем needsManual
@@ -298,7 +298,7 @@ export class GuildsService {
       ok: false,
       needsManual: true,
       message:
-        'Discord не разрешил боту обновить иерархию автоматически. Нужно один раз перетащить роль бота наверх вручную.',
+        'Discord did not allow the bot to update the hierarchy automatically. You need to drag the bot role to the top manually once.',
     };
   }
 }

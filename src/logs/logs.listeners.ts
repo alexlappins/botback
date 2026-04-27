@@ -35,13 +35,13 @@ export class LogsListeners {
 
     const embed = new EmbedBuilder()
       .setColor(0x57f287)
-      .setTitle('Участник присоединился')
+      .setTitle('Member joined')
       .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
       .addFields(
-        { name: 'Пользователь', value: `${member.user.tag}`, inline: true },
+        { name: 'User', value: `${member.user.tag}`, inline: true },
         { name: 'ID', value: member.user.id, inline: true },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -55,7 +55,7 @@ export class LogsListeners {
     const guild = member.guild;
     const guildId = guild.id;
 
-    // Пытаемся определить кик через Audit Log
+    // Try to detect a kick via Audit Log
     try {
       const logs = await guild.fetchAuditLogs({
         type: AuditLogEvent.MemberKick,
@@ -71,22 +71,22 @@ export class LogsListeners {
         if (channelId) {
           const channel = guild.channels.cache.get(channelId);
           if (channel?.isTextBased()) {
-            const reason = kickEntry.reason?.slice(0, 500) ?? 'Не указана';
+            const reason = kickEntry.reason?.slice(0, 500) ?? 'Not specified';
             const embed = new EmbedBuilder()
               .setColor(0xe67e22)
-              .setTitle('Участник кикнут')
+              .setTitle('Member kicked')
               .setThumbnail(member.user?.displayAvatarURL?.({ size: 128 }) ?? null)
               .addFields(
-                { name: 'Пользователь', value: member.user?.tag ?? 'Unknown', inline: true },
+                { name: 'User', value: member.user?.tag ?? 'Unknown', inline: true },
                 { name: 'ID', value: member.id, inline: true },
                 {
-                  name: 'Кикнул',
+                  name: 'Kicked by',
                   value: kickEntry.executor?.tag ?? 'Unknown',
                   inline: true,
                 },
-                { name: 'Причина', value: reason, inline: false },
+                { name: 'Reason', value: reason, inline: false },
                 {
-                  name: 'Дата',
+                  name: 'Date',
                   value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
                   inline: false,
                 },
@@ -100,7 +100,7 @@ export class LogsListeners {
                 userId: member.id,
                 userTag: member.user?.tag ?? 'Unknown',
                 executorTag: kickEntry.executor?.tag ?? 'Unknown',
-                reason: kickEntry.reason ?? 'Не указана',
+                reason: kickEntry.reason ?? 'Not specified',
               },
             });
             return;
@@ -108,7 +108,7 @@ export class LogsListeners {
         }
       }
     } catch {
-      // нет прав на audit log или ошибка — логируем как обычный выход
+      // no audit log permission or error — log as a regular leave
     }
 
     await this.logEvents.create({
@@ -130,13 +130,13 @@ export class LogsListeners {
 
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('Участник покинул сервер')
+      .setTitle('Member left the server')
       .setThumbnail(member.user?.displayAvatarURL?.({ size: 128 }) ?? null)
       .addFields(
-        { name: 'Пользователь', value: member.user?.tag ?? 'Unknown', inline: true },
+        { name: 'User', value: member.user?.tag ?? 'Unknown', inline: true },
         { name: 'ID', value: member.id, inline: true },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -187,18 +187,18 @@ export class LogsListeners {
     if (newUntil) {
       const embed = new EmbedBuilder()
         .setColor(0xfee75c)
-        .setTitle('Таймаут применён')
+        .setTitle('Timeout applied')
         .setThumbnail(newMember.user.displayAvatarURL({ size: 128 }))
         .addFields(
-          { name: 'Пользователь', value: userTag, inline: true },
+          { name: 'User', value: userTag, inline: true },
           { name: 'ID', value: userId, inline: true },
           {
-            name: 'До',
+            name: 'Until',
             value: `<t:${Math.floor(newUntil.getTime() / 1000)}:F>`,
             inline: true,
           },
           {
-            name: 'Дата',
+            name: 'Date',
             value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
             inline: false,
           },
@@ -207,13 +207,13 @@ export class LogsListeners {
     } else {
       const embed = new EmbedBuilder()
         .setColor(0x57f287)
-        .setTitle('Таймаут снят')
+        .setTitle('Timeout removed')
         .setThumbnail(newMember.user.displayAvatarURL({ size: 128 }))
         .addFields(
-          { name: 'Пользователь', value: userTag, inline: true },
+          { name: 'User', value: userTag, inline: true },
           { name: 'ID', value: userId, inline: true },
           {
-            name: 'Дата',
+            name: 'Date',
             value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
             inline: false,
           },
@@ -227,7 +227,7 @@ export class LogsListeners {
     if (!message.guild) return;
     const guildId = message.guild.id;
 
-    const contentPreview = message.content?.slice(0, 500) ?? '(пусто)';
+    const contentPreview = message.content?.slice(0, 500) ?? '(empty)';
     await this.logEvents.create({
       guildId,
       type: 'messages',
@@ -247,17 +247,17 @@ export class LogsListeners {
     const logChannel = message.guild.channels.cache.get(channelId);
     if (!logChannel?.isTextBased()) return;
 
-    const content = message.content?.slice(0, 1000) || '(пусто)';
+    const content = message.content?.slice(0, 1000) || '(empty)';
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('Сообщение удалено')
+      .setTitle('Message deleted')
       .addFields(
-        { name: 'Канал', value: `${message.channel}`, inline: true },
-        { name: 'Автор', value: message.author?.tag ?? 'Unknown', inline: true },
-        { name: 'ID сообщения', value: message.id, inline: true },
-        { name: 'Содержимое', value: content, inline: false },
+        { name: 'Channel', value: `${message.channel}`, inline: true },
+        { name: 'Author', value: message.author?.tag ?? 'Unknown', inline: true },
+        { name: 'Message ID', value: message.id, inline: true },
+        { name: 'Content', value: content, inline: false },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -271,8 +271,8 @@ export class LogsListeners {
     if (!newMsg.guild || newMsg.author?.bot) return;
     if (oldMsg.content === newMsg.content) return;
 
-    const oldContent = oldMsg.content?.slice(0, 500) || '(пусто)';
-    const newContent = newMsg.content?.slice(0, 500) || '(пусто)';
+    const oldContent = oldMsg.content?.slice(0, 500) || '(empty)';
+    const newContent = newMsg.content?.slice(0, 500) || '(empty)';
     await this.logEvents.create({
       guildId: newMsg.guild.id,
       type: 'messages',
@@ -294,15 +294,15 @@ export class LogsListeners {
     if (!logChannel?.isTextBased()) return;
     const embed = new EmbedBuilder()
       .setColor(0xfee75c)
-      .setTitle('Сообщение отредактировано')
+      .setTitle('Message edited')
       .setURL(newMsg.url)
       .addFields(
-        { name: 'Канал', value: `${newMsg.channel}`, inline: true },
-        { name: 'Автор', value: newMsg.author?.tag ?? 'Unknown', inline: true },
-        { name: 'Было', value: oldContent, inline: false },
-        { name: 'Стало', value: newContent, inline: false },
+        { name: 'Channel', value: `${newMsg.channel}`, inline: true },
+        { name: 'Author', value: newMsg.author?.tag ?? 'Unknown', inline: true },
+        { name: 'Before', value: oldContent, inline: false },
+        { name: 'After', value: newContent, inline: false },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -330,12 +330,12 @@ export class LogsListeners {
     if (!logChannel?.isTextBased()) return;
     const embed = new EmbedBuilder()
       .setColor(0x57f287)
-      .setTitle('Канал создан')
+      .setTitle('Channel created')
       .addFields(
-        { name: 'Канал', value: `${channelName} (${ch})`, inline: true },
-        { name: 'Тип', value: String(ch.type), inline: true },
+        { name: 'Channel', value: `${channelName} (${ch})`, inline: true },
+        { name: 'Type', value: String(ch.type), inline: true },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -363,12 +363,12 @@ export class LogsListeners {
     if (!logChannel?.isTextBased()) return;
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('Канал удалён')
+      .setTitle('Channel deleted')
       .addFields(
-        { name: 'Имя', value: channelName, inline: true },
+        { name: 'Name', value: channelName, inline: true },
         { name: 'ID', value: ch.id, inline: true },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },
@@ -388,7 +388,7 @@ export class LogsListeners {
       payload: {
         userId: ban.user?.id,
         userTag: ban.user?.tag ?? 'Unknown',
-        reason: ban.reason ?? 'Не указана',
+        reason: ban.reason ?? 'Not specified',
       },
     });
 
@@ -400,18 +400,18 @@ export class LogsListeners {
 
     const embed = new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('Пользователь забанен')
+      .setTitle('User banned')
       .setThumbnail(ban.user?.displayAvatarURL({ size: 128 }) ?? null)
       .addFields(
-        { name: 'Пользователь', value: ban.user?.tag ?? 'Unknown', inline: true },
+        { name: 'User', value: ban.user?.tag ?? 'Unknown', inline: true },
         { name: 'ID', value: ban.user?.id ?? ban.guild.id, inline: true },
         {
-          name: 'Причина',
-          value: ban.reason?.slice(0, 500) || 'Не указана',
+          name: 'Reason',
+          value: ban.reason?.slice(0, 500) || 'Not specified',
           inline: false,
         },
         {
-          name: 'Дата',
+          name: 'Date',
           value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
           inline: false,
         },

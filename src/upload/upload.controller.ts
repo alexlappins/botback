@@ -35,14 +35,14 @@ export class UploadController {
     }),
   )
   upload(@UploadedFile() file: Express.Multer.File | undefined) {
-    if (!file) throw new BadRequestException('Потрібен файл у полі file (multipart/form-data)');
+    if (!file) throw new BadRequestException('A file is required in the "file" field (multipart/form-data)');
     if (!ALLOWED_MIME.has(file.mimetype)) {
       try {
         unlinkSync(file.path);
       } catch {
         /* ignore */
       }
-      throw new BadRequestException('Дозволені лише зображення: PNG, JPEG, GIF, WebP');
+      throw new BadRequestException('Only images are allowed: PNG, JPEG, GIF, WebP');
     }
 
     const port = this.config.get<string>('PORT') ?? '3000';

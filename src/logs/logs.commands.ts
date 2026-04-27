@@ -13,33 +13,33 @@ import {
 import { ChannelOption, StringOption } from 'necord';
 
 const LOG_TYPE_CHOICES = [
-  { name: 'Вход / Выход (join-leave)', value: 'joinLeave' },
-  { name: 'Сообщения (messages)', value: 'messages' },
-  { name: 'Модерация (moderation)', value: 'moderation' },
-  { name: 'Каналы (channel)', value: 'channel' },
-  { name: 'Бан / Кик (ban-kick)', value: 'banKick' },
+  { name: 'Join / Leave (join-leave)', value: 'joinLeave' },
+  { name: 'Messages (messages)', value: 'messages' },
+  { name: 'Moderation (moderation)', value: 'moderation' },
+  { name: 'Channels (channel)', value: 'channel' },
+  { name: 'Ban / Kick (ban-kick)', value: 'banKick' },
 ] as const;
 
 const LOG_NAMES: Record<string, string> = {
-  joinLeave: 'Вход / Выход',
-  messages: 'Сообщения',
-  moderation: 'Модерация',
-  channel: 'Каналы',
-  banKick: 'Бан / Кик',
+  joinLeave: 'Join / Leave',
+  messages: 'Messages',
+  moderation: 'Moderation',
+  channel: 'Channels',
+  banKick: 'Ban / Kick',
 };
 
 class LogsSetDto {
   @StringOption({
-    name: 'тип',
-    description: 'Тип логов',
+    name: 'type',
+    description: 'Log type',
     required: true,
     choices: [...LOG_TYPE_CHOICES],
   })
   type: string;
 
   @ChannelOption({
-    name: 'канал',
-    description: 'Канал для логов',
+    name: 'channel',
+    description: 'Channel for logs',
     required: true,
   })
   channel: { id: string };
@@ -47,8 +47,8 @@ class LogsSetDto {
 
 class LogsOffDto {
   @StringOption({
-    name: 'тип',
-    description: 'Тип логов',
+    name: 'type',
+    description: 'Log type',
     required: true,
     choices: [...LOG_TYPE_CHOICES],
   })
@@ -57,7 +57,7 @@ class LogsOffDto {
 
 const LogsGroup = createCommandGroupDecorator({
   name: 'logs',
-  description: 'Настройка каналов для логов событий на сервере',
+  description: 'Configure log channels for server events',
 });
 
 @LogsGroup()
@@ -67,7 +67,7 @@ export class LogsCommands {
 
   @Subcommand({
     name: 'set',
-    description: 'Указать канал для типа логов',
+    description: 'Set the channel for a log type',
   })
   async onSet(
     @Context() [interaction]: SlashCommandContext,
@@ -77,20 +77,20 @@ export class LogsCommands {
 
     const guildId = interaction.guildId;
     if (!guildId) {
-      return interaction.editReply({ content: 'Команда только для сервера.' });
+      return interaction.editReply({ content: 'Server only.' });
     }
 
     const key = dto.type as keyof LogChannelsConfig;
     this.storage.setLogChannel(guildId, key, dto.channel.id);
 
     return interaction.editReply({
-      content: `Логи **${LOG_NAMES[key] ?? key}** будут отправляться в <#${dto.channel.id}>.`,
+      content: `**${LOG_NAMES[key] ?? key}** logs will be sent to <#${dto.channel.id}>.`,
     });
   }
 
   @Subcommand({
     name: 'off',
-    description: 'Отключить логи определённого типа',
+    description: 'Disable logs of a specific type',
   })
   async onOff(
     @Context() [interaction]: SlashCommandContext,
@@ -99,12 +99,12 @@ export class LogsCommands {
     await interaction.deferReply({ ephemeral: true });
     const guildId = interaction.guildId;
     if (!guildId) {
-      return interaction.editReply({ content: 'Команда только для сервера.' });
+      return interaction.editReply({ content: 'Server only.' });
     }
     const key = dto.type as keyof LogChannelsConfig;
     this.storage.setLogChannel(guildId, key, null);
     return interaction.editReply({
-      content: `Логи типа **${LOG_NAMES[key] ?? key}** отключены.`,
+      content: `**${LOG_NAMES[key] ?? key}** logs disabled.`,
     });
   }
 }

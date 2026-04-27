@@ -281,7 +281,7 @@ export class GuildsController {
         componentsJson: body.componentsJson ?? undefined,
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Не вдалося відправити';
+      const msg = e instanceof Error ? e.message : 'Failed to send';
       throw new BadRequestException(msg);
     }
     return { ok: true };

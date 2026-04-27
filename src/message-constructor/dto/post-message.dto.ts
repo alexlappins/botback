@@ -2,29 +2,29 @@ import { ChannelOption, StringOption } from 'necord';
 
 export class PostMessageDto {
   @ChannelOption({
-    name: 'канал',
-    description: 'Канал, куда отправить сообщение',
+    name: 'channel',
+    description: 'Channel to send the message to',
     required: true,
   })
   channel: { id: string };
 
   @StringOption({
-    name: 'заголовок',
-    description: 'Заголовок сообщения (эмбед)',
+    name: 'title',
+    description: 'Message title (embed)',
     required: true,
   })
   title: string;
 
   @StringOption({
-    name: 'описание',
-    description: 'Текст описания (эмбед)',
+    name: 'description',
+    description: 'Description text (embed)',
     required: true,
   })
   description: string;
 
   @StringOption({
-    name: 'картинка',
-    description: 'URL картинки (необязательно)',
+    name: 'image',
+    description: 'Image URL (optional)',
     required: false,
   })
   image?: string;

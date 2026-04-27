@@ -52,10 +52,10 @@ export class TemplateInstallService {
 
   async check(guildId: string, templateId: string): Promise<TemplateInstallCheckReport> {
     const guild = this.client.guilds.cache.get(guildId);
-    if (!guild) return { ok: false, error: 'Сервер не найден или бот не на сервере' };
+    if (!guild) return { ok: false, error: 'Server not found or bot is not on the server' };
 
     const template = await this.loadTemplate(templateId);
-    if (!template) return { ok: false, error: 'Шаблон не найден' };
+    if (!template) return { ok: false, error: 'Template not found' };
 
     await guild.channels.fetch();
     await guild.roles.fetch();
@@ -101,14 +101,14 @@ export class TemplateInstallService {
     );
 
     const warnings: string[] = [];
-    if (missingMessageChannels.length) warnings.push('Часть сообщений не будет отправлена: не найдены каналы');
+    if (missingMessageChannels.length) warnings.push('Some messages will not be sent: channels not found');
     if (missingReactionRoleChannels.length || missingReactionRoleNames.length) {
-      warnings.push('Часть авторолей не будет привязана: не найдены каналы/роли');
+      warnings.push('Some auto-roles will not be bound: channels/roles not found');
     }
     if (reactionRoleMissingMessageTemplates.length) {
-      warnings.push('Часть авторолей не будет привязана: нет исходного сообщения в шаблоне');
+      warnings.push('Some auto-roles will not be bound: source message missing in template');
     }
-    if (missingLogChannels.length) warnings.push('Часть лог-каналов не будет установлена: каналы не найдены');
+    if (missingLogChannels.length) warnings.push('Some log channels will not be set: channels not found');
 
     return {
       ok: true,
@@ -151,11 +151,11 @@ export class TemplateInstallService {
     if (!guild) {
       return {
         ok: false,
-        error: 'Сервер не найден или бот не на сервере',
+        error: 'Server not found or bot is not on the server',
         summary: emptySummary,
         skipped: emptySkipped,
         warnings: [],
-        errors: ['Сервер не найден или бот не на сервере'],
+        errors: ['Server not found or bot is not on the server'],
       };
     }
 
@@ -163,11 +163,11 @@ export class TemplateInstallService {
     if (!template) {
       return {
         ok: false,
-        error: 'Шаблон не найден',
+        error: 'Template not found',
         summary: emptySummary,
         skipped: emptySkipped,
         warnings: [],
-        errors: ['Шаблон не найден'],
+        errors: ['Template not found'],
       };
     }
 
@@ -223,13 +223,18 @@ export class TemplateInstallService {
         try {
           await guild.setIcon(template.iconUrl);
         } catch (e) {
-          warnings.push(`Не удалось установить иконку сервера: ${(e as Error).message}`);
+          warnings.push(`Failed to set server icon: ${(e as Error).message}`);
         }
       }
 
-      // 1. Роли (сортируем по position)
+      // 1. Роли (сортируем по position) — пропускаем если роль с таким именем уже есть
       const roles = (template.roles ?? []).slice().sort((a, b) => a.position - b.position);
       for (const r of roles) {
+        const existingId = guildRoleIdByName.get(r.name);
+        if (existingId) {
+          roleIdByName.set(r.name, existingId);
+          continue;
+        }
         const created = await guild.roles.create({
           name: r.name,
           color: r.color,
@@ -268,7 +273,7 @@ export class TemplateInstallService {
             } catch (err) {
               console.warn(
                 `[TemplateInstall] Failed to lift bot role: ${(err as Error).message}. ` +
-                  'Будет применён fallback — понижение шаблонных ролей.',
+                  'Fallback will be applied — lowering template roles.',
               );
             }
           } else {
@@ -328,8 +333,8 @@ export class TemplateInstallService {
             );
             await guild.roles.setPositions(positions).catch((err) => {
               warnings.push(
-                `Не удалось опустить роли под роль бота: ${(err as Error).message}. ` +
-                  'Перетащите роль бота выше всех шаблонных ролей вручную в настройках сервера.',
+                `Failed to lower roles below the bot role: ${(err as Error).message}. ` +
+                  'Drag the bot role above all template roles manually in server settings.',
               );
             });
           } else {
@@ -340,14 +345,20 @@ export class TemplateInstallService {
         }
       } catch (e) {
         warnings.push(
-          `Не удалось настроить иерархию ролей: ${(e as Error).message}. ` +
-            'Перетащите роль бота выше всех ролей вручную в настройках сервера.',
+          `Failed to configure role hierarchy: ${(e as Error).message}. ` +
+            'Drag the bot role above all roles manually in server settings.',
         );
       }
 
-      // 2. Категории (Discord type 4)
+      // 2. Категории (Discord type 4) — пропускаем если уже есть на гильдии (Discord-шаблон создал)
       const categories = (template.categories ?? []).slice().sort((a, b) => a.position - b.position);
       for (const c of categories) {
+        const existingId = guildCategoryIdByName.get(c.name);
+        if (existingId) {
+          // Уже существует — не дублируем, просто запоминаем ID
+          categoryIdByName.set(c.name, existingId);
+          continue;
+        }
         const ch = await guild.channels.create({
           name: c.name,
           type: ChannelType.GuildCategory,
@@ -367,15 +378,16 @@ export class TemplateInstallService {
         const firstRoleId = firstRole ? roleIdByName.get(firstRole.name) : undefined;
         if (!firstRoleId) {
           warnings.push(
-            'Привязки категорий заданы, но в шаблоне нет ролей — добавьте роль (она станет верификационной).',
+            'Category bindings are set, but the template has no roles — add a role (it will become the verification role).',
           );
         } else {
           const { PermissionsBitField } = await import('discord.js');
           for (const g of grants) {
-            const categoryId = categoryIdByName.get(g.categoryName);
+            const categoryId =
+              categoryIdByName.get(g.categoryName) ?? guildCategoryIdByName.get(g.categoryName);
             if (!categoryId) {
               warnings.push(
-                `Категория "${g.categoryName}" не найдена в шаблоне — права для неё не выставлены.`,
+                `Category "${g.categoryName}" not found in the template or on the server — permissions not applied.`,
               );
               continue;
             }
@@ -398,16 +410,21 @@ export class TemplateInstallService {
               ]);
             } catch (e) {
               warnings.push(
-                `Не удалось выставить права для категории "${g.categoryName}": ${(e as Error).message}`,
+                `Failed to set permissions for category "${g.categoryName}": ${(e as Error).message}`,
               );
             }
           }
         }
       }
 
-      // 3. Каналы (не категории): text, voice и т.д.
+      // 3. Каналы (не категории): text, voice и т.д. — пропускаем если уже есть на гильдии
       const channels = (template.channels ?? []).slice().sort((a, b) => a.position - b.position);
       for (const ch of channels) {
+        const existingId = guildChannelIdByName.get(ch.name);
+        if (existingId) {
+          channelIdByName.set(ch.name, existingId);
+          continue;
+        }
         const parentId = ch.categoryName
           ? categoryIdByName.get(ch.categoryName) ?? guildCategoryIdByName.get(ch.categoryName) ?? null
           : null;
@@ -477,7 +494,7 @@ export class TemplateInstallService {
 
         // Пропускаем полностью пустые сообщения — Discord не разрешает их отправлять
         if (!content && !embed && !components) {
-          warnings.push(`Сообщение в канале "${msg.channelName}" пустое — пропущено`);
+          warnings.push(`Message in channel "${msg.channelName}" is empty — skipped`);
           continue;
         }
 
@@ -518,7 +535,7 @@ export class TemplateInstallService {
       const logChannels = template.logChannels ?? [];
       for (const lc of logChannels) {
         if (!LOG_TYPES.includes(lc.logType)) {
-          warnings.push(`Пропущен неизвестный тип лога: ${lc.logType}`);
+          warnings.push(`Skipped unknown log type: ${lc.logType}`);
           continue;
         }
         const channelId = channelIdByName.get(lc.channelName) ?? guildChannelIdByName.get(lc.channelName);
@@ -541,7 +558,7 @@ export class TemplateInstallService {
           await guild.emojis.create({ attachment: em.imageUrl, name });
           summary.emojisCreated += 1;
         } catch (e) {
-          warnings.push(`Не удалось создать эмодзи "${name}": ${(e as Error).message}`);
+          warnings.push(`Failed to create emoji "${name}": ${(e as Error).message}`);
         }
       }
 
@@ -557,7 +574,7 @@ export class TemplateInstallService {
           });
           summary.stickersCreated += 1;
         } catch (e) {
-          warnings.push(`Не удалось создать стикер "${st.name}": ${(e as Error).message}`);
+          warnings.push(`Failed to create sticker "${st.name}": ${(e as Error).message}`);
         }
       }
 
@@ -579,7 +596,7 @@ export class TemplateInstallService {
         } catch (e) {
           const msg = (e as Error).message;
           console.error('[TemplateInstall] server stats setup FAILED:', e);
-          warnings.push(`Не удалось настроить статистику сервера: ${msg}`);
+          warnings.push(`Failed to configure server stats: ${msg}`);
         }
       }
 
@@ -591,10 +608,10 @@ export class TemplateInstallService {
       };
     } catch (e) {
       const err = e as Error;
-      errors.push(err.message || 'Ошибка установки');
+      errors.push(err.message || 'Installation error');
       return {
         ok: false,
-        error: err.message || 'Ошибка установки',
+        error: err.message || 'Installation error',
         summary,
         skipped: normalizeSkipped(skipped),
         warnings: unique(warnings),
@@ -618,9 +635,9 @@ export class TemplateInstallService {
     },
   ): Promise<void> {
     const guild = this.client.guilds.cache.get(guildId);
-    if (!guild) throw new Error('Сервер не знайдено або бот не на сервері');
+    if (!guild) throw new Error('Server not found or bot is not on the server');
     const channel = guild.channels.cache.get(channelId);
-    if (!channel?.isTextBased()) throw new Error('Канал не знайдено або це не текстовий канал');
+    if (!channel?.isTextBased()) throw new Error('Channel not found or is not a text channel');
 
     // В превью плейсхолдеры не подставляем (ctx пустой) — пользователь увидит
     // шаблон как есть, без реальных каналов/ролей.
@@ -636,7 +653,7 @@ export class TemplateInstallService {
       : undefined;
     const content = payload.content?.trim() ? payload.content.trim() : undefined;
     if (!content && !embed && !components) {
-      throw new Error('Немає що відправити: додайте текст, embed або кнопки');
+      throw new Error('Nothing to send: add text, embed, or buttons');
     }
 
     await (channel as import('discord.js').TextChannel).send({
@@ -813,7 +830,7 @@ export class TemplateInstallService {
         for (const [name, id] of ctx.roleMap) {
           customId = customId.replace(new RegExp(`\\{\\{${escapeRegex(name)}\\}\\}`, 'g'), id);
         }
-        const label = typeof c.label === 'string' ? this.replacePlaceholders(c.label, ctx) : 'Роль';
+        const label = typeof c.label === 'string' ? this.replacePlaceholders(c.label, ctx) : 'Role';
         const btn = new ButtonBuilder()
           .setCustomId(customId)
           .setLabel(label)
@@ -851,9 +868,9 @@ function coerceEmbedJsonField(v: unknown): Record<string, unknown> | undefined {
         return parsed as Record<string, unknown>;
       }
     } catch {
-      throw new Error('embedJson: некоректний JSON у рядку');
+      throw new Error('embedJson: invalid JSON string');
     }
-    throw new Error('embedJson після parse має бути об’єктом');
+    throw new Error('embedJson must be an object after parse');
   }
   if (typeof v === 'object' && !Array.isArray(v)) {
     return v as Record<string, unknown>;

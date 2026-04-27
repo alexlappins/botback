@@ -2,22 +2,22 @@ import { ChannelOption, RoleOption, StringOption } from 'necord';
 
 export class SetupRoleDto {
   @ChannelOption({
-    name: 'канал',
-    description: 'Канал, где отправить сообщение с кнопкой',
+    name: 'channel',
+    description: 'Channel where the button message will be sent',
     required: true,
   })
   channel: { id: string };
 
   @RoleOption({
-    name: 'роль',
-    description: 'Роль, которую выдавать по нажатию',
+    name: 'role',
+    description: 'Role to grant on click',
     required: true,
   })
   role: { id: string; name: string };
 
   @StringOption({
-    name: 'текст',
-    description: 'Текст сообщения над кнопкой',
+    name: 'text',
+    description: 'Text above the button',
     required: false,
   })
   text?: string;

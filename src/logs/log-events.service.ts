@@ -70,7 +70,7 @@ export class LogEventsService {
   async runRetentionCleanup(): Promise<void> {
     const deleted = await this.deleteOlderThanRetention();
     if (deleted > 0) {
-      console.log(`[LogEvents] Удалено записей старше ${RETENTION_DAYS} дней: ${deleted}`);
+      console.log(`[LogEvents] Deleted records older than ${RETENTION_DAYS} days: ${deleted}`);
     }
   }
 }

@@ -33,7 +33,7 @@ export class ReactionRolesCommands {
 
   @SlashCommand({
     name: 'reaction-role',
-    description: 'Создать сообщение с кнопкой: нажатие выдаёт или снимает роль',
+    description: 'Create a message with a button: clicking grants or removes a role',
   })
   async onSetup(
     @Context() [interaction]: SlashCommandContext,
@@ -43,12 +43,12 @@ export class ReactionRolesCommands {
 
     const channel = interaction.guild?.channels.cache.get(dto.channel.id);
     if (!channel?.isTextBased()) {
-      return interaction.editReply({ content: 'Укажите текстовый канал.' });
+      return interaction.editReply({ content: 'Please specify a text channel.' });
     }
 
     const role = interaction.guild?.roles.cache.get(dto.role.id);
     if (!role) {
-      return interaction.editReply({ content: 'Роль не найдена.' });
+      return interaction.editReply({ content: 'Role not found.' });
     }
 
     const customId = `${REACTION_ROLE_PREFIX}/${dto.role.id}`;
@@ -59,7 +59,7 @@ export class ReactionRolesCommands {
         .setStyle(ButtonStyle.Primary),
     );
 
-    const content = dto.text ?? `Нажми кнопку, чтобы получить или снять роль **${dto.role.name}**.`;
+    const content = dto.text ?? `Click the button to receive or remove the **${dto.role.name}** role.`;
     const embed = new EmbedBuilder()
       .setDescription(content)
       .setColor(0x57f287);
@@ -70,13 +70,13 @@ export class ReactionRolesCommands {
     });
 
     return interaction.editReply({
-      content: `Сообщение с кнопкой для роли **${dto.role.name}** отправлено в <#${dto.channel.id}>.`,
+      content: `Button message for role **${dto.role.name}** sent to <#${dto.channel.id}>.`,
     });
   }
 
   @SlashCommand({
     name: 'reaction-role-emoji',
-    description: 'Привязать эмодзи на сообщении к роли: реакция выдаёт или снимает роль',
+    description: 'Bind an emoji on a message to a role: reacting grants or removes the role',
   })
   async onSetupEmoji(
     @Context() [interaction]: SlashCommandContext,
@@ -86,17 +86,17 @@ export class ReactionRolesCommands {
 
     const guildId = interaction.guildId;
     if (!guildId) {
-      return interaction.editReply({ content: 'Команда только для сервера.' });
+      return interaction.editReply({ content: 'Server only.' });
     }
 
     const channel = interaction.guild?.channels.cache.get(dto.channel.id);
     if (!channel?.isTextBased()) {
-      return interaction.editReply({ content: 'Укажите текстовый канал.' });
+      return interaction.editReply({ content: 'Please specify a text channel.' });
     }
 
     const role = interaction.guild?.roles.cache.get(dto.role.id);
     if (!role) {
-      return interaction.editReply({ content: 'Роль не найдена.' });
+      return interaction.editReply({ content: 'Role not found.' });
     }
 
     let message: import('discord.js').Message;
@@ -104,7 +104,7 @@ export class ReactionRolesCommands {
       message = await (channel as import('discord.js').TextChannel).messages.fetch(dto.messageId);
     } catch {
       return interaction.editReply({
-        content: 'Сообщение не найдено. Проверьте канал и ID сообщения (из ссылки).',
+        content: 'Message not found. Check the channel and the message ID (from the link).',
       });
     }
 
@@ -114,7 +114,7 @@ export class ReactionRolesCommands {
     } catch (e) {
       const err = e as Error;
       return interaction.editReply({
-        content: `Не удалось поставить реакцию: ${err.message}. Проверьте формат эмодзи (для кастомного используйте имя:id).`,
+        content: `Failed to add reaction: ${err.message}. Check the emoji format (for a custom emoji use name:id).`,
       });
     }
 
@@ -122,7 +122,7 @@ export class ReactionRolesCommands {
     this.storage.setReactionRoleChannel(guildId, message.id, message.channelId);
 
     return interaction.editReply({
-      content: `Реакция привязана к роли **${dto.role.name}**. Кто поставит этот эмодзи — получит роль, кто уберёт — лишится.`,
+      content: `Reaction bound to role **${dto.role.name}**. Adding this emoji grants the role, removing it takes the role away.`,
     });
   }
 }
