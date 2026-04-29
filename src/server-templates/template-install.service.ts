@@ -393,21 +393,43 @@ export class TemplateInstallService {
             }
             const cat = guild.channels.cache.get(categoryId);
             if (!cat || cat.type !== ChannelType.GuildCategory) continue;
+            const overwrites = [
+              {
+                id: guild.roles.everyone.id,
+                deny: [PermissionsBitField.Flags.ViewChannel],
+              },
+              {
+                id: firstRoleId,
+                allow: [
+                  PermissionsBitField.Flags.ViewChannel,
+                  PermissionsBitField.Flags.SendMessages,
+                  PermissionsBitField.Flags.ReadMessageHistory,
+                ],
+              },
+            ];
             try {
-              await cat.permissionOverwrites.set([
-                {
-                  id: guild.roles.everyone.id,
-                  deny: [PermissionsBitField.Flags.ViewChannel],
-                },
-                {
-                  id: firstRoleId,
-                  allow: [
-                    PermissionsBitField.Flags.ViewChannel,
-                    PermissionsBitField.Flags.SendMessages,
-                    PermissionsBitField.Flags.ReadMessageHistory,
-                  ],
-                },
-              ]);
+              // 1) на самой категории
+              await cat.permissionOverwrites.set(overwrites);
+
+              // 2) синхронизируем на ВСЕ каналы которые лежат под этой категорией.
+              // Discord по умолчанию не наследует овэрайты — нужно явно проставить на каждый канал.
+              const childChannels = guild.channels.cache.filter(
+                (c) =>
+                  'parentId' in c &&
+                  (c as { parentId?: string | null }).parentId === categoryId &&
+                  c.type !== ChannelType.GuildCategory,
+              );
+              for (const ch of childChannels.values()) {
+                const target = ch as unknown as {
+                  permissionOverwrites?: { set: (o: typeof overwrites) => Promise<unknown> };
+                };
+                if (!target.permissionOverwrites?.set) continue;
+                await target.permissionOverwrites.set(overwrites).catch((err) => {
+                  warnings.push(
+                    `Failed to sync permissions on channel "#${ch.name}" in category "${g.categoryName}": ${(err as Error).message}`,
+                  );
+                });
+              }
             } catch (e) {
               warnings.push(
                 `Failed to set permissions for category "${g.categoryName}": ${(e as Error).message}`,
@@ -452,6 +474,50 @@ export class TemplateInstallService {
         });
         channelIdByName.set(ch.name, created.id);
         summary.channelsCreated += 1;
+      }
+
+      // 3.1. Re-sync category permissions onto ALL child channels (including ones we just created)
+      // Discord doesn't auto-inherit overrides — we must explicitly copy them onto each channel.
+      if (grants.length > 0) {
+        const firstRole = (template.roles ?? []).slice().sort((a, b) => a.position - b.position)[0];
+        const firstRoleId = firstRole ? roleIdByName.get(firstRole.name) : undefined;
+        if (firstRoleId) {
+          const { PermissionsBitField } = await import('discord.js');
+          const overwrites = [
+            {
+              id: guild.roles.everyone.id,
+              deny: [PermissionsBitField.Flags.ViewChannel],
+            },
+            {
+              id: firstRoleId,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory,
+              ],
+            },
+          ];
+          // Re-fetch to make sure newly-created channels are in cache
+          await guild.channels.fetch().catch(() => null);
+          for (const g of grants) {
+            const categoryId =
+              categoryIdByName.get(g.categoryName) ?? guildCategoryIdByName.get(g.categoryName);
+            if (!categoryId) continue;
+            const childChannels = guild.channels.cache.filter(
+              (c) =>
+                'parentId' in c &&
+                (c as { parentId?: string | null }).parentId === categoryId &&
+                c.type !== ChannelType.GuildCategory,
+            );
+            for (const ch of childChannels.values()) {
+              const target = ch as unknown as {
+                permissionOverwrites?: { set: (o: typeof overwrites) => Promise<unknown> };
+              };
+              if (!target.permissionOverwrites?.set) continue;
+              await target.permissionOverwrites.set(overwrites).catch(() => null);
+            }
+          }
+        }
       }
 
       // 4. Сообщения: группируем по channelName, сортируем по messageOrder
