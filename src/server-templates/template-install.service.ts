@@ -730,6 +730,9 @@ export class TemplateInstallService {
   }
 
   private loadTemplate(templateId: string): Promise<ServerTemplate | null> {
+    // relationLoadStrategy: 'query' = отдельный SELECT на каждую relation вместо
+    // одного огромного JOIN. Без этого 9 relations создают cartesian product
+    // и Node падает с heap OOM на средних/больших шаблонах.
     return this.templateRepo.findOne({
       where: { id: templateId },
       relations: {
@@ -743,6 +746,7 @@ export class TemplateInstallService {
         stickers: true,
         categoryGrants: true,
       },
+      relationLoadStrategy: 'query',
     });
   }
 

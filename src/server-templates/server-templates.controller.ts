@@ -87,19 +87,24 @@ export class ServerTemplatesController {
 
   @Get(':id')
   async getOne(@Param('id') id: string) {
-    const template = await this.templateRepo
-      .createQueryBuilder('t')
-      .where('t.id = :id', { id })
-      .leftJoinAndSelect('t.roles', 'roles')
-      .leftJoinAndSelect('t.categories', 'categories')
-      .leftJoinAndSelect('t.channels', 'channels')
-      .leftJoinAndSelect('t.messages', 'messages')
-      .leftJoinAndSelect('t.reactionRoles', 'reactionRoles')
-      .leftJoinAndSelect('t.logChannels', 'logChannels')
-      .leftJoinAndSelect('t.emojis', 'emojis')
-      .leftJoinAndSelect('t.stickers', 'stickers')
-      .leftJoinAndSelect('t.categoryGrants', 'categoryGrants')
-      .getOne();
+    // ВАЖНО: 9 leftJoinAndSelect подряд = cartesian-взрыв в одном SQL и OOM при росте шаблона.
+    // Используем findOne с relations + relationLoadStrategy: 'query' — каждая relation
+    // отдельным SELECT'ом, без декартова произведения.
+    const template = await this.templateRepo.findOne({
+      where: { id },
+      relations: {
+        roles: true,
+        categories: true,
+        channels: true,
+        messages: true,
+        reactionRoles: true,
+        logChannels: true,
+        emojis: true,
+        stickers: true,
+        categoryGrants: true,
+      },
+      relationLoadStrategy: 'query',
+    });
     if (!template) throw new NotFoundException('Template not found');
     return template;
   }
