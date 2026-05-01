@@ -49,6 +49,15 @@ export class GuildsService {
   ) {
     this.clientId = config.getOrThrow<string>('DISCORD_CLIENT_ID');
     this.clientSecret = config.getOrThrow<string>('DISCORD_CLIENT_SECRET');
+
+    // Каждые 5 минут чистим протухший кэш гильдий — иначе Map растёт бесконечно
+    // при ротации accessToken'ов (refresh, повторные логины).
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, v] of this.guildsCache) {
+        if (v.expiresAt <= now) this.guildsCache.delete(k);
+      }
+    }, 5 * 60 * 1000).unref();
   }
 
   /**
