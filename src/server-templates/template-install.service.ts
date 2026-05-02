@@ -15,6 +15,8 @@ import { TemplateMessage } from './entities/template-message.entity';
 import { TemplateReactionRole } from './entities/template-reaction-role.entity';
 import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
+import { GuildMessage } from '../guild-data/entities/guild-message.entity';
+import { GuildReactionRole } from '../guild-data/entities/guild-reaction-role.entity';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
   'joinLeave',
@@ -46,6 +48,10 @@ export class TemplateInstallService {
     private readonly emojiRepo: Repository<TemplateEmoji>,
     @InjectRepository(TemplateSticker)
     private readonly stickerRepo: Repository<TemplateSticker>,
+    @InjectRepository(GuildMessage)
+    private readonly guildMessageRepo: Repository<GuildMessage>,
+    @InjectRepository(GuildReactionRole)
+    private readonly guildReactionRoleRepo: Repository<GuildReactionRole>,
     private readonly storage: GuildStorageService,
     private readonly serverStats: ServerStatsService,
   ) {}
@@ -224,6 +230,28 @@ export class TemplateInstallService {
           await guild.setIcon(template.iconUrl);
         } catch (e) {
           warnings.push(`Failed to set server icon: ${(e as Error).message}`);
+        }
+      }
+
+      // 0.5. Server stats — создаём ДО шагов категорий и прав, чтобы:
+      //  — не дублировать категорию (если она уже задана как TemplateCategory или в categoryGrants)
+      //  — права из categoryGrants могли применяться к ServerStats-категории и её каналам
+      if (template.enableServerStats) {
+        try {
+          await this.serverStats.setup(guildId, {
+            categoryName: template.statsCategoryName ?? undefined,
+            totalName: template.statsTotalName ?? undefined,
+            humansName: template.statsHumansName ?? undefined,
+            botsName: template.statsBotsName ?? undefined,
+            onlineName: template.statsOnlineName ?? undefined,
+          });
+          console.log('[TemplateInstall] server stats setup completed (early phase)');
+          // Перечитываем кэш каналов — дальше шаги 2 и 2.1 должны видеть свежие категории
+          await guild.channels.fetch().catch(() => null);
+        } catch (e) {
+          const msg = (e as Error).message;
+          console.error('[TemplateInstall] server stats setup FAILED:', e);
+          warnings.push(`Failed to configure server stats: ${msg}`);
         }
       }
 
@@ -520,6 +548,60 @@ export class TemplateInstallService {
         }
       }
 
+      // 3.2. Verification: скрыть выбранную категорию + её каналы от выбранной роли.
+      // Используется когда верификационный канал должен исчезнуть после получения роли:
+      //   @everyone — видит, верифицированный — НЕ видит.
+      // Одна категория и одна роль на шаблон.
+      if (template.verifiedHideCategoryName && template.verifiedHideRoleName) {
+        const catName = template.verifiedHideCategoryName.trim();
+        const roleName = template.verifiedHideRoleName.trim();
+        const hideRoleId = roleIdByName.get(roleName) ?? guildRoleIdByName.get(roleName);
+        const hideCategoryId =
+          categoryIdByName.get(catName) ?? guildCategoryIdByName.get(catName);
+        if (!hideRoleId) {
+          warnings.push(
+            `Verification: role "${roleName}" not found — visibility was not configured.`,
+          );
+        } else if (!hideCategoryId) {
+          warnings.push(
+            `Verification: category "${catName}" not found — visibility was not configured.`,
+          );
+        } else {
+          await guild.channels.fetch().catch(() => null);
+          const cat = guild.channels.cache.get(hideCategoryId);
+          if (cat && cat.type === ChannelType.GuildCategory) {
+            try {
+              // Только Deny ViewChannel для роли — @everyone не трогаем (по умолчанию видит).
+              await cat.permissionOverwrites.edit(hideRoleId, {
+                ViewChannel: false,
+              });
+            } catch (e) {
+              warnings.push(
+                `Verification: failed to hide category "${catName}" from role "${roleName}": ${(e as Error).message}`,
+              );
+            }
+            // Тот же deny на все каналы внутри
+            const childChannels = guild.channels.cache.filter(
+              (c) =>
+                'parentId' in c &&
+                (c as { parentId?: string | null }).parentId === hideCategoryId &&
+                c.type !== ChannelType.GuildCategory,
+            );
+            for (const ch of childChannels.values()) {
+              const target = ch as unknown as {
+                permissionOverwrites?: {
+                  edit: (id: string, perms: { ViewChannel: boolean }) => Promise<unknown>;
+                };
+              };
+              if (!target.permissionOverwrites?.edit) continue;
+              await target.permissionOverwrites
+                .edit(hideRoleId, { ViewChannel: false })
+                .catch(() => null);
+            }
+          }
+        }
+      }
+
       // 4. Сообщения: группируем по channelName, сортируем по messageOrder
       const messages = (template.messages ?? []).slice().sort(
         (a, b) => a.channelName.localeCompare(b.channelName) || a.messageOrder - b.messageOrder,
@@ -571,6 +653,25 @@ export class TemplateInstallService {
         });
         messageIdByKey.set(`${msg.channelName}:${msg.messageOrder}`, sent.id);
         summary.messagesSent += 1;
+
+        // Snapshot to GuildMessage so user can edit it from User Admin Panel.
+        // Сохраняем уже-подставленный embed/components (с реальными role/channel id).
+        try {
+          const snapshot = this.guildMessageRepo.create({
+            guildId,
+            discordChannelId: channelId,
+            discordMessageId: sent.id,
+            channelName: msg.channelName,
+            content: content ?? null,
+            embedJson: embedRecord ? this.applyPlaceholdersToObject(embedRecord, ctx) : null,
+            componentsJson: componentsPayload
+              ? this.applyPlaceholdersToArray(componentsPayload, ctx)
+              : null,
+          });
+          await this.guildMessageRepo.save(snapshot);
+        } catch (e) {
+          warnings.push(`Snapshot for message in #${msg.channelName} failed: ${(e as Error).message}`);
+        }
       }
 
       // 5. Привязки авторолей
@@ -595,6 +696,30 @@ export class TemplateInstallService {
         this.storage.setReactionRoleBinding(guildId, messageId, rr.emojiKey, roleId);
         this.storage.setReactionRoleChannel(guildId, messageId, channelId);
         summary.reactionRolesBound += 1;
+
+        // Snapshot to GuildReactionRole (per-guild table for User Admin Panel)
+        try {
+          const existing = await this.guildReactionRoleRepo.findOne({
+            where: { guildId, discordMessageId: messageId, emojiKey: rr.emojiKey },
+          });
+          if (existing) {
+            existing.discordChannelId = channelId;
+            existing.discordRoleId = roleId;
+            await this.guildReactionRoleRepo.save(existing);
+          } else {
+            await this.guildReactionRoleRepo.save(
+              this.guildReactionRoleRepo.create({
+                guildId,
+                discordChannelId: channelId,
+                discordMessageId: messageId,
+                emojiKey: rr.emojiKey,
+                discordRoleId: roleId,
+              }),
+            );
+          }
+        } catch (e) {
+          warnings.push(`Reaction-role snapshot failed: ${(e as Error).message}`);
+        }
       }
 
       // 6. Каналы логов
@@ -644,27 +769,8 @@ export class TemplateInstallService {
         }
       }
 
-      // 9. Статистика сервера (категория с 4 каналами-счётчиками)
-      console.log(
-        `[TemplateInstall] step 9 — enableServerStats=${template.enableServerStats}, ` +
-          `names: cat="${template.statsCategoryName}" total="${template.statsTotalName}"`,
-      );
-      if (template.enableServerStats) {
-        try {
-          await this.serverStats.setup(guildId, {
-            categoryName: template.statsCategoryName ?? undefined,
-            totalName: template.statsTotalName ?? undefined,
-            humansName: template.statsHumansName ?? undefined,
-            botsName: template.statsBotsName ?? undefined,
-            onlineName: template.statsOnlineName ?? undefined,
-          });
-          console.log('[TemplateInstall] server stats setup completed');
-        } catch (e) {
-          const msg = (e as Error).message;
-          console.error('[TemplateInstall] server stats setup FAILED:', e);
-          warnings.push(`Failed to configure server stats: ${msg}`);
-        }
-      }
+      // (Server stats был перенесён в шаг 0.5 — до создания категорий и применения прав,
+      // чтобы права из categoryGrants могли распространиться на ServerStats-категорию.)
 
       return {
         ok: true,
@@ -874,6 +980,40 @@ export class TemplateInstallService {
       out = out.replace(new RegExp(`\\{\\{${escapeRegex(name)}\\}\\}`, 'g'), id);
     }
     return out;
+  }
+
+  /**
+   * Глубоко обходит объект и заменяет плейсхолдеры во всех string-полях.
+   * Используется для подготовки snapshot (GuildMessage) — там лежит уже-резолвленный JSON.
+   */
+  private applyPlaceholdersToObject(
+    obj: Record<string, unknown>,
+    ctx: PlaceholderContext,
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string') {
+        out[k] = this.replacePlaceholders(v, ctx);
+      } else if (Array.isArray(v)) {
+        out[k] = this.applyPlaceholdersToArray(v, ctx);
+      } else if (v && typeof v === 'object') {
+        out[k] = this.applyPlaceholdersToObject(v as Record<string, unknown>, ctx);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+
+  private applyPlaceholdersToArray(arr: unknown[], ctx: PlaceholderContext): unknown[] {
+    return arr.map((item) => {
+      if (typeof item === 'string') return this.replacePlaceholders(item, ctx);
+      if (Array.isArray(item)) return this.applyPlaceholdersToArray(item, ctx);
+      if (item && typeof item === 'object') {
+        return this.applyPlaceholdersToObject(item as Record<string, unknown>, ctx);
+      }
+      return item;
+    });
   }
 
   private buildComponents(

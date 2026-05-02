@@ -123,6 +123,8 @@ export class ServerTemplatesController {
       statsHumansName?: string | null;
       statsBotsName?: string | null;
       statsOnlineName?: string | null;
+      verifiedHideCategoryName?: string | null;
+      verifiedHideRoleName?: string | null;
     },
   ) {
     await this.ensureTemplate(id);
@@ -151,11 +153,21 @@ export class ServerTemplatesController {
     if (body.statsOnlineName !== undefined) statsFields.statsOnlineName = body.statsOnlineName?.trim() || null;
     if (Object.keys(statsFields).length) await this.templateRepo.update(id, statsFields);
 
+    const verifyFields: Record<string, string | null> = {};
+    if (body.verifiedHideCategoryName !== undefined) {
+      verifyFields.verifiedHideCategoryName = body.verifiedHideCategoryName?.trim() || null;
+    }
+    if (body.verifiedHideRoleName !== undefined) {
+      verifyFields.verifiedHideRoleName = body.verifiedHideRoleName?.trim() || null;
+    }
+    if (Object.keys(verifyFields).length) await this.templateRepo.update(id, verifyFields);
+
     return this.templateRepo.findOne({
       where: { id },
       select: [
         'id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats',
         'statsCategoryName', 'statsTotalName', 'statsHumansName', 'statsBotsName', 'statsOnlineName',
+        'verifiedHideCategoryName', 'verifiedHideRoleName',
         'createdAt', 'updatedAt',
       ],
     });

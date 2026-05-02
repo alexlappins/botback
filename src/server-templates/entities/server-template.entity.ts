@@ -59,6 +59,17 @@ export class ServerTemplate {
   @Column({ name: 'stats_online_name', type: 'varchar', length: 100, nullable: true })
   statsOnlineName: string | null;
 
+  /**
+   * Verification: имя категории, которая будет СКРЫТА от выбранной роли.
+   * Привязка по имени, не по Discord ID — работает на любом сервере.
+   */
+  @Column({ name: 'verified_hide_category_name', type: 'varchar', length: 128, nullable: true })
+  verifiedHideCategoryName: string | null;
+
+  /** Verification: имя роли, которой выбранная категория и её каналы будут скрыты */
+  @Column({ name: 'verified_hide_role_name', type: 'varchar', length: 128, nullable: true })
+  verifiedHideRoleName: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

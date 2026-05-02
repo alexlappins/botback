@@ -83,14 +83,28 @@ export class ServerStatsService {
       throw new Error('Guild not found');
     }
 
-    // Категория в самом верху (position = 0)
-    this.logger.log(`[ServerStats] creating category "${names.categoryName}" in guild ${guild.id}`);
-    const category = await guild.channels.create({
-      name: names.categoryName,
-      type: ChannelType.GuildCategory,
-      position: 0,
-    });
-    this.logger.log(`[ServerStats] category created: id=${category.id}`);
+    // Перед созданием — проверяем, нет ли уже категории с таким именем на гильдии.
+    // Это спасает от дублирования если шаблон содержит ту же категорию в TemplateCategory
+    // или если она была создана раньше другим способом.
+    await guild.channels.fetch().catch(() => null);
+    const existingCategoryByName = guild.channels.cache.find(
+      (c) => c.type === ChannelType.GuildCategory && c.name === names.categoryName,
+    );
+    let category;
+    if (existingCategoryByName) {
+      this.logger.log(
+        `[ServerStats] reusing existing category "${names.categoryName}" (id=${existingCategoryByName.id})`,
+      );
+      category = existingCategoryByName;
+    } else {
+      this.logger.log(`[ServerStats] creating category "${names.categoryName}" in guild ${guild.id}`);
+      category = await guild.channels.create({
+        name: names.categoryName,
+        type: ChannelType.GuildCategory,
+        position: 0,
+      });
+      this.logger.log(`[ServerStats] category created: id=${category.id}`);
+    }
 
     // Четыре голосовых канала (чтобы участники не могли зайти — только видеть название)
     const denyConnect = [
@@ -100,31 +114,37 @@ export class ServerStatsService {
       },
     ];
 
+    // Helper: ищет канал по имени под нашей категорией и реюзит, иначе создаёт новый.
+    // Учитывает что Discord может префиксовать названия (например "📊 Total: 0").
+    // Сравниваем по основе шаблона без числа.
+    const findOrCreateCounter = async (
+      template: string,
+    ): Promise<{ id: string; name: string }> => {
+      const stub = renderName(template, 0); // "👥 Total: 0"
+      // Берём префикс до подставленного числа — для матча после переименований
+      const prefix = template.split('{count}')[0]; // "👥 Total: "
+      const existing = guild.channels.cache.find(
+        (c) =>
+          c.type === ChannelType.GuildVoice &&
+          'parentId' in c &&
+          (c as { parentId?: string | null }).parentId === category.id &&
+          (c.name === stub || (prefix && c.name.startsWith(prefix))),
+      );
+      if (existing) return { id: existing.id, name: existing.name };
+      const created = await guild.channels.create({
+        name: stub,
+        type: ChannelType.GuildVoice,
+        parent: category.id,
+        permissionOverwrites: denyConnect,
+      });
+      return { id: created.id, name: created.name };
+    };
+
     const [total, humans, bots, online] = await Promise.all([
-      guild.channels.create({
-        name: renderName(names.totalName, 0),
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: denyConnect,
-      }),
-      guild.channels.create({
-        name: renderName(names.humansName, 0),
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: denyConnect,
-      }),
-      guild.channels.create({
-        name: renderName(names.botsName, 0),
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: denyConnect,
-      }),
-      guild.channels.create({
-        name: renderName(names.onlineName, 0),
-        type: ChannelType.GuildVoice,
-        parent: category.id,
-        permissionOverwrites: denyConnect,
-      }),
+      findOrCreateCounter(names.totalName),
+      findOrCreateCounter(names.humansName),
+      findOrCreateCounter(names.botsName),
+      findOrCreateCounter(names.onlineName),
     ]);
 
     const config: ServerStatsConfig = {

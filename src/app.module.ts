@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CommonModule } from './common/common.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DiscordModule } from './discord/discord.module';
+import { GuildDataModule } from './guild-data/guild-data.module';
 import { LogsModule } from './logs/logs.module';
 import { MessageConstructorModule } from './message-constructor/message-constructor.module';
 import { ReactionRolesModule } from './reaction-roles/reaction-roles.module';
@@ -47,6 +48,7 @@ import { UploadModule } from './upload/upload.module';
     ServerStatsModule,
     LogsModule,
     UploadModule,
+    GuildDataModule,
   ],
   controllers: [AppController],
   providers: [AppService],
