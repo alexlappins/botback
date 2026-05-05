@@ -194,16 +194,30 @@ export class GuildsController {
     await this.ensureGuildAccess(guildId, req);
     if (!body?.templateId) throw new BadRequestException('templateId required');
     const user = this.getUser(req);
+    let accessRow: UserTemplateAccess | null = null;
     if (user.role !== 'admin') {
-      const access = await this.accessRepo.findOne({
+      accessRow = await this.accessRepo.findOne({
         where: { userId: user.id, templateId: body.templateId },
       });
-      if (!access) {
+      if (!accessRow) {
         throw new BadRequestException('No access to this template');
+      }
+      // One-shot products can only be installed once.
+      if (accessRow.usageType === 'oneShot' && accessRow.installedAt) {
+        throw new BadRequestException(
+          'This template is one-shot and has already been installed.',
+        );
       }
     }
     const result = await this.templateInstall.install(guildId, body.templateId);
     if (!result.ok) throw new BadRequestException(result.error);
+
+    // Mark this access as used (oneShot tracking + purchases history)
+    if (accessRow) {
+      accessRow.installedAt = new Date();
+      accessRow.installedGuildId = guildId;
+      await this.accessRepo.save(accessRow);
+    }
     return result;
   }
 

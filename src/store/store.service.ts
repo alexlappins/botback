@@ -34,6 +34,7 @@ export class StoreService {
         't.name',
         't.description',
         't.discordTemplateUrl',
+        't.iconUrl',
       ])
       .getMany();
   }

@@ -34,7 +34,9 @@ import { GuildReactionRole } from './entities/guild-reaction-role.entity';
  *
  * Edits are mirrored to the actual Discord channels and messages.
  */
-@Controller('api/guilds/:guildId')
+// NOTE: Path is intentionally different from /api/guilds/:id/reaction-roles
+// (which is owned by the legacy DashboardController and returns a different shape).
+@Controller('api/guilds/:guildId/data')
 @UseGuards(SessionGuard, CustomerGuard)
 export class GuildDataController {
   constructor(

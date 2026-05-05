@@ -36,19 +36,38 @@ export class TemplateAccessController {
   async myTemplates(@Req() req: Request) {
     const user = (req as Request & { user: SessionUser }).user;
     if (user.role === 'admin') {
-      return this.templateRepo.find({
+      const list = await this.templateRepo.find({
         order: { createdAt: 'DESC' },
-        select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt'],
+        select: ['id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'createdAt'],
       });
+      // Admin gets all templates without access metadata
+      return list.map((t) => ({ ...t, access: null }));
     }
 
     const rows = await this.accessRepo.find({ where: { userId: user.id } });
     const ids = rows.map((r) => r.templateId);
     if (!ids.length) return [];
-    return this.templateRepo.find({
+    const templates = await this.templateRepo.find({
       where: ids.map((id) => ({ id })),
-      select: ['id', 'name', 'description', 'discordTemplateUrl', 'createdAt'],
+      select: ['id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'createdAt'],
       order: { createdAt: 'DESC' },
+    });
+    const accessByTemplate = new Map(rows.map((r) => [r.templateId, r]));
+    return templates.map((t) => {
+      const a = accessByTemplate.get(t.id);
+      return {
+        ...t,
+        access: a
+          ? {
+              grantedAt: a.grantedAt,
+              installedAt: a.installedAt,
+              installedGuildId: a.installedGuildId,
+              usageType: a.usageType,
+              pricePaid: a.pricePaid,
+              currency: a.currency,
+            }
+          : null,
+      };
     });
   }
 }
