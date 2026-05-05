@@ -187,16 +187,31 @@ export class TemplateInstallService {
         .filter((r) => !r.managed)
         .map((r) => [r.name, r.id] as const),
     );
-    const guildCategoryIdByName = new Map(
+    // ВАЖНО: эти мапы пересобираются после шага 0.5 (ServerStats), потому что
+    // ServerStats создаёт новую категорию и каналы — без обновления мапы шаг 2.1
+    // не сможет найти ServerStats-категорию для применения категориальных прав.
+    let guildCategoryIdByName = new Map(
       guild.channels.cache
         .filter((c) => c.type === ChannelType.GuildCategory)
         .map((c) => [c.name, c.id] as const),
     );
-    const guildChannelIdByName = new Map(
+    let guildChannelIdByName = new Map(
       guild.channels.cache
         .filter((c) => c.isTextBased() && !c.isDMBased())
         .map((c) => [c.name, c.id] as const),
     );
+    const rebuildGuildMaps = () => {
+      guildCategoryIdByName = new Map(
+        guild.channels.cache
+          .filter((c) => c.type === ChannelType.GuildCategory)
+          .map((c) => [c.name, c.id] as const),
+      );
+      guildChannelIdByName = new Map(
+        guild.channels.cache
+          .filter((c) => c.isTextBased() && !c.isDMBased())
+          .map((c) => [c.name, c.id] as const),
+      );
+    };
 
     const summary: TemplateInstallSummary = {
       rolesCreated: 0,
@@ -246,8 +261,10 @@ export class TemplateInstallService {
             onlineName: template.statsOnlineName ?? undefined,
           });
           console.log('[TemplateInstall] server stats setup completed (early phase)');
-          // Перечитываем кэш каналов — дальше шаги 2 и 2.1 должны видеть свежие категории
+          // Перечитываем кэш каналов и обновляем мапы — иначе шаг 2.1
+          // не сможет найти свежесозданную ServerStats-категорию по имени.
           await guild.channels.fetch().catch(() => null);
+          rebuildGuildMaps();
         } catch (e) {
           const msg = (e as Error).message;
           console.error('[TemplateInstall] server stats setup FAILED:', e);
