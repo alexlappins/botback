@@ -19,7 +19,7 @@ export class WelcomeTemplate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'config_id' })
+  @Column({ name: 'config_id', type: 'uuid' })
   configId: string;
 
   @ManyToOne(() => WelcomeConfig, (c) => c.templates, { onDelete: 'CASCADE' })

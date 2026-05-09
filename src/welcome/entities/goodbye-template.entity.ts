@@ -19,7 +19,7 @@ export class GoodbyeTemplate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'config_id' })
+  @Column({ name: 'config_id', type: 'uuid' })
   configId: string;
 
   @ManyToOne(() => GoodbyeConfig, (c) => c.templates, { onDelete: 'CASCADE' })

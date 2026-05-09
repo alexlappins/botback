@@ -16,10 +16,10 @@ export class GuildMemberSeen {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'guild_id', length: 32 })
+  @Column({ name: 'guild_id', type: 'varchar', length: 32 })
   guildId: string;
 
-  @Column({ name: 'user_id', length: 32 })
+  @Column({ name: 'user_id', type: 'varchar', length: 32 })
   userId: string;
 
   @CreateDateColumn({ name: 'first_seen_at' })

@@ -25,24 +25,23 @@ export class WelcomeConfig {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'guild_id', length: 32 })
+  @Column({ name: 'guild_id', type: 'varchar', length: 32 })
   guildId: string;
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   enabled: boolean;
 
   /** 'channel' = post to channel, 'dm' = direct message the user */
-  @Column({ name: 'send_mode', length: 16, default: 'channel' })
+  @Column({ name: 'send_mode', type: 'varchar', length: 16, default: 'channel' })
   sendMode: 'channel' | 'dm';
 
-  @Column({ name: 'channel_id', length: 32, nullable: true })
+  @Column({ name: 'channel_id', type: 'varchar', length: 32, nullable: true })
   channelId: string | null;
 
-  // ── Premium image fields (Iteration 2 — wired but unused) ──
-  @Column({ name: 'image_enabled', default: false })
+  @Column({ name: 'image_enabled', type: 'boolean', default: false })
   imageEnabled: boolean;
 
-  @Column({ name: 'image_send_mode', length: 16, default: 'with_text' })
+  @Column({ name: 'image_send_mode', type: 'varchar', length: 16, default: 'with_text' })
   imageSendMode: 'with_text' | 'before_text' | 'image_only';
 
   @Column({ name: 'background_image_url', type: 'varchar', length: 1024, nullable: true })
@@ -64,7 +63,7 @@ export class WelcomeConfig {
   @Column({ name: 'buttons_config', type: 'jsonb', nullable: true })
   buttonsConfig: { label: string; url: string; emoji?: string | null }[] | null;
 
-  @Column({ name: 'returning_member_enabled', default: false })
+  @Column({ name: 'returning_member_enabled', type: 'boolean', default: false })
   returningMemberEnabled: boolean;
 
   @Column({ name: 'returning_member_text', type: 'text', nullable: true })
