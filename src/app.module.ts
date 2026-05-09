@@ -17,6 +17,7 @@ import { ServerTemplatesModule } from './server-templates/server-templates.modul
 import { StoreModule } from './store/store.module';
 import { TemplatesModule } from './templates/templates.module';
 import { UploadModule } from './upload/upload.module';
+import { WelcomeModule } from './welcome/welcome.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { UploadModule } from './upload/upload.module';
     LogsModule,
     UploadModule,
     GuildDataModule,
+    WelcomeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
