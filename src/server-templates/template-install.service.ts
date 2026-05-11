@@ -17,6 +17,12 @@ import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
 import { GuildMessage } from '../guild-data/entities/guild-message.entity';
 import { GuildReactionRole } from '../guild-data/entities/guild-reaction-role.entity';
+import { WelcomeConfig } from '../welcome/entities/welcome-config.entity';
+import { WelcomeTemplate } from '../welcome/entities/welcome-template.entity';
+import { GoodbyeConfig } from '../welcome/entities/goodbye-config.entity';
+import { GoodbyeTemplate } from '../welcome/entities/goodbye-template.entity';
+import { TemplateWelcomeVariant } from './entities/template-welcome-variant.entity';
+import { TemplateGoodbyeVariant } from './entities/template-goodbye-variant.entity';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
   'joinLeave',
@@ -52,6 +58,14 @@ export class TemplateInstallService {
     private readonly guildMessageRepo: Repository<GuildMessage>,
     @InjectRepository(GuildReactionRole)
     private readonly guildReactionRoleRepo: Repository<GuildReactionRole>,
+    @InjectRepository(WelcomeConfig)
+    private readonly welcomeConfigRepo: Repository<WelcomeConfig>,
+    @InjectRepository(WelcomeTemplate)
+    private readonly welcomeVariantRepo: Repository<WelcomeTemplate>,
+    @InjectRepository(GoodbyeConfig)
+    private readonly goodbyeConfigRepo: Repository<GoodbyeConfig>,
+    @InjectRepository(GoodbyeTemplate)
+    private readonly goodbyeVariantRepo: Repository<GoodbyeTemplate>,
     private readonly storage: GuildStorageService,
     private readonly serverStats: ServerStatsService,
   ) {}
@@ -144,6 +158,8 @@ export class TemplateInstallService {
       logChannelsSet: 0,
       emojisCreated: 0,
       stickersCreated: 0,
+      welcomeVariantsApplied: 0,
+      goodbyeVariantsApplied: 0,
     };
     const emptySkipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -222,6 +238,8 @@ export class TemplateInstallService {
       logChannelsSet: 0,
       emojisCreated: 0,
       stickersCreated: 0,
+      welcomeVariantsApplied: 0,
+      goodbyeVariantsApplied: 0,
     };
     const skipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -789,6 +807,20 @@ export class TemplateInstallService {
       // (Server stats был перенесён в шаг 0.5 — до создания категорий и применения прав,
       // чтобы права из categoryGrants могли распространиться на ServerStats-категорию.)
 
+      // ─── Step 6: Welcome / Goodbye ─────────────────────
+      // Resolve template-level channel names to live channel IDs, then create
+      // (or replace) WelcomeConfig / GoodbyeConfig with full per-variant copies.
+      try {
+        await this.applyWelcomeGoodbye(guildId, template, guildChannelIdByName);
+        summary.welcomeVariantsApplied = (template.welcomeVariants ?? []).length;
+        summary.goodbyeVariantsApplied = (template.goodbyeVariants ?? []).length;
+      } catch (e) {
+        warnings.push(
+          `Welcome/Goodbye install failed: ${(e as Error).message}. Channel resolution: ` +
+            `welcome="${template.welcomeChannelName ?? '?'}" goodbye="${template.goodbyeChannelName ?? '?'}"`,
+        );
+      }
+
       return {
         ok: true,
         summary,
@@ -852,6 +884,91 @@ export class TemplateInstallService {
     });
   }
 
+  /**
+   * Install welcome/goodbye variants from the template onto the target guild.
+   * Replaces any existing per-guild WelcomeConfig/GoodbyeConfig state so the
+   * install is a clean reset (matches behaviour of messages snapshot).
+   */
+  private async applyWelcomeGoodbye(
+    guildId: string,
+    template: ServerTemplate,
+    channelByName: Map<string, string>,
+  ): Promise<void> {
+    // ── Welcome ──
+    {
+      let wc = await this.welcomeConfigRepo.findOne({ where: { guildId } });
+      if (!wc) {
+        wc = this.welcomeConfigRepo.create({ guildId });
+      }
+      wc.enabled = !!template.welcomeEnabled;
+      wc.sendMode = template.welcomeSendMode === 'dm' ? 'dm' : 'channel';
+      wc.channelId = template.welcomeChannelName
+        ? channelByName.get(template.welcomeChannelName) ?? null
+        : null;
+      wc.returningMemberEnabled = !!template.welcomeReturningEnabled;
+      await this.welcomeConfigRepo.save(wc);
+
+      await this.welcomeVariantRepo.delete({ configId: wc.id });
+      const templateVariants = (template.welcomeVariants ?? []).slice().sort(
+        (a, b) => a.orderIndex - b.orderIndex,
+      );
+      for (let i = 0; i < templateVariants.length; i++) {
+        const tv = templateVariants[i];
+        await this.welcomeVariantRepo.save(
+          this.welcomeVariantRepo.create({
+            configId: wc.id,
+            role: tv.role === 'returning_member' ? 'returning_member' : 'new_member',
+            text: tv.text,
+            orderIndex: tv.orderIndex ?? i,
+            imageEnabled: !!tv.imageEnabled,
+            imageSendMode: tv.imageSendMode,
+            backgroundImageUrl: tv.backgroundImageUrl,
+            backgroundFill: tv.backgroundFill,
+            avatarConfig: tv.avatarConfig,
+            usernameConfig: tv.usernameConfig,
+            imageTextConfig: tv.imageTextConfig,
+            buttonsConfig: tv.buttonsConfig,
+          }),
+        );
+      }
+    }
+
+    // ── Goodbye ──
+    {
+      let gc = await this.goodbyeConfigRepo.findOne({ where: { guildId } });
+      if (!gc) {
+        gc = this.goodbyeConfigRepo.create({ guildId });
+      }
+      gc.enabled = !!template.goodbyeEnabled;
+      gc.channelId = template.goodbyeChannelName
+        ? channelByName.get(template.goodbyeChannelName) ?? null
+        : null;
+      await this.goodbyeConfigRepo.save(gc);
+
+      await this.goodbyeVariantRepo.delete({ configId: gc.id });
+      const templateVariants = (template.goodbyeVariants ?? []).slice().sort(
+        (a, b) => a.orderIndex - b.orderIndex,
+      );
+      for (let i = 0; i < templateVariants.length; i++) {
+        const tv = templateVariants[i];
+        await this.goodbyeVariantRepo.save(
+          this.goodbyeVariantRepo.create({
+            configId: gc.id,
+            text: tv.text,
+            orderIndex: tv.orderIndex ?? i,
+            imageEnabled: !!tv.imageEnabled,
+            imageSendMode: tv.imageSendMode,
+            backgroundImageUrl: tv.backgroundImageUrl,
+            backgroundFill: tv.backgroundFill,
+            avatarConfig: tv.avatarConfig,
+            usernameConfig: tv.usernameConfig,
+            imageTextConfig: tv.imageTextConfig,
+          }),
+        );
+      }
+    }
+  }
+
   private loadTemplate(templateId: string): Promise<ServerTemplate | null> {
     // relationLoadStrategy: 'query' = отдельный SELECT на каждую relation вместо
     // одного огромного JOIN. Без этого 9 relations создают cartesian product
@@ -868,6 +985,8 @@ export class TemplateInstallService {
         emojis: true,
         stickers: true,
         categoryGrants: true,
+        welcomeVariants: true,
+        goodbyeVariants: true,
       },
       relationLoadStrategy: 'query',
     });
@@ -1187,6 +1306,8 @@ export type TemplateInstallSummary = {
   logChannelsSet: number;
   emojisCreated: number;
   stickersCreated: number;
+  welcomeVariantsApplied: number;
+  goodbyeVariantsApplied: number;
 };
 
 export type TemplateInstallSkipped = {

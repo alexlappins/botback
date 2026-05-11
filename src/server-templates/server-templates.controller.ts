@@ -27,6 +27,9 @@ import { TemplateCategoryGrant } from './entities/template-category-grant.entity
 import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
+import { TemplateWelcomeVariant } from './entities/template-welcome-variant.entity';
+import { TemplateGoodbyeVariant } from './entities/template-goodbye-variant.entity';
+import type { WelcomeVariantRole } from '../welcome/entities/welcome-template.entity';
 import { NoCacheInterceptor } from './no-cache.interceptor';
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = ['joinLeave', 'messages', 'moderation', 'channel', 'banKick'];
@@ -46,6 +49,8 @@ export class ServerTemplatesController {
     @InjectRepository(TemplateEmoji) private readonly emojiRepo: Repository<TemplateEmoji>,
     @InjectRepository(TemplateSticker) private readonly stickerRepo: Repository<TemplateSticker>,
     @InjectRepository(TemplateCategoryGrant) private readonly categoryGrantRepo: Repository<TemplateCategoryGrant>,
+    @InjectRepository(TemplateWelcomeVariant) private readonly welcomeVariantRepo: Repository<TemplateWelcomeVariant>,
+    @InjectRepository(TemplateGoodbyeVariant) private readonly goodbyeVariantRepo: Repository<TemplateGoodbyeVariant>,
   ) {}
 
   private async ensureTemplate(id: string): Promise<ServerTemplate> {
@@ -102,10 +107,14 @@ export class ServerTemplatesController {
         emojis: true,
         stickers: true,
         categoryGrants: true,
+        welcomeVariants: true,
+        goodbyeVariants: true,
       },
       relationLoadStrategy: 'query',
     });
     if (!template) throw new NotFoundException('Template not found');
+    template.welcomeVariants?.sort((a, b) => a.orderIndex - b.orderIndex);
+    template.goodbyeVariants?.sort((a, b) => a.orderIndex - b.orderIndex);
     return template;
   }
 
@@ -125,6 +134,12 @@ export class ServerTemplatesController {
       statsOnlineName?: string | null;
       verifiedHideCategoryName?: string | null;
       verifiedHideRoleName?: string | null;
+      welcomeEnabled?: boolean;
+      welcomeSendMode?: 'channel' | 'dm';
+      welcomeChannelName?: string | null;
+      welcomeReturningEnabled?: boolean;
+      goodbyeEnabled?: boolean;
+      goodbyeChannelName?: string | null;
     },
   ) {
     await this.ensureTemplate(id);
@@ -162,12 +177,31 @@ export class ServerTemplatesController {
     }
     if (Object.keys(verifyFields).length) await this.templateRepo.update(id, verifyFields);
 
+    const wgFields: Record<string, unknown> = {};
+    if (body.welcomeEnabled !== undefined) wgFields.welcomeEnabled = !!body.welcomeEnabled;
+    if (body.welcomeSendMode !== undefined) {
+      wgFields.welcomeSendMode = body.welcomeSendMode === 'dm' ? 'dm' : 'channel';
+    }
+    if (body.welcomeChannelName !== undefined) {
+      wgFields.welcomeChannelName = body.welcomeChannelName?.trim() || null;
+    }
+    if (body.welcomeReturningEnabled !== undefined) {
+      wgFields.welcomeReturningEnabled = !!body.welcomeReturningEnabled;
+    }
+    if (body.goodbyeEnabled !== undefined) wgFields.goodbyeEnabled = !!body.goodbyeEnabled;
+    if (body.goodbyeChannelName !== undefined) {
+      wgFields.goodbyeChannelName = body.goodbyeChannelName?.trim() || null;
+    }
+    if (Object.keys(wgFields).length) await this.templateRepo.update(id, wgFields);
+
     return this.templateRepo.findOne({
       where: { id },
       select: [
         'id', 'name', 'description', 'discordTemplateUrl', 'iconUrl', 'enableServerStats',
         'statsCategoryName', 'statsTotalName', 'statsHumansName', 'statsBotsName', 'statsOnlineName',
         'verifiedHideCategoryName', 'verifiedHideRoleName',
+        'welcomeEnabled', 'welcomeSendMode', 'welcomeChannelName', 'welcomeReturningEnabled',
+        'goodbyeEnabled', 'goodbyeChannelName',
         'createdAt', 'updatedAt',
       ],
     });
@@ -620,6 +654,142 @@ export class ServerTemplatesController {
     if (result.affected === 0) throw new NotFoundException('Grant not found');
     return { ok: true };
   }
+
+  // ── Welcome variants ──────────────────────────────────
+
+  @Get(':id/welcome-variants')
+  async listWelcomeVariants(@Param('id') id: string) {
+    await this.ensureTemplate(id);
+    const rows = await this.welcomeVariantRepo.find({ where: { templateId: id } });
+    return rows.sort((a, b) => a.orderIndex - b.orderIndex);
+  }
+
+  @Post(':id/welcome-variants')
+  async addWelcomeVariant(
+    @Param('id') id: string,
+    @Body() body: TemplateVariantBody & { role?: WelcomeVariantRole; buttonsConfig?: { label: string; url: string; emoji?: string | null }[] | null },
+  ) {
+    await this.ensureTemplate(id);
+    const text = (body?.text ?? '').toString();
+    if (!text.trim()) throw new BadRequestException('text required');
+    const v = this.welcomeVariantRepo.create({
+      templateId: id,
+      role: body.role === 'returning_member' ? 'returning_member' : 'new_member',
+      text,
+      orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : 0,
+      ...mergeImageFields(body),
+      buttonsConfig: body.buttonsConfig ?? null,
+    });
+    await this.welcomeVariantRepo.save(v);
+    return v;
+  }
+
+  @Patch(':id/welcome-variants/:vId')
+  async updateWelcomeVariant(
+    @Param('id') id: string,
+    @Param('vId') vId: string,
+    @Body() body: Partial<TemplateVariantBody> & { role?: WelcomeVariantRole; buttonsConfig?: { label: string; url: string; emoji?: string | null }[] | null },
+  ) {
+    await this.ensureTemplate(id);
+    const v = await this.welcomeVariantRepo.findOne({ where: { id: vId, templateId: id } });
+    if (!v) throw new NotFoundException('Variant not found');
+    if (body.text !== undefined) v.text = body.text.toString();
+    if (body.orderIndex !== undefined) v.orderIndex = body.orderIndex;
+    if (body.role !== undefined) {
+      v.role = body.role === 'returning_member' ? 'returning_member' : 'new_member';
+    }
+    if (body.buttonsConfig !== undefined) v.buttonsConfig = body.buttonsConfig ?? null;
+    Object.assign(v, mergeImageFields(body));
+    await this.welcomeVariantRepo.save(v);
+    return v;
+  }
+
+  @Delete(':id/welcome-variants/:vId')
+  async removeWelcomeVariant(@Param('id') id: string, @Param('vId') vId: string) {
+    await this.ensureTemplate(id);
+    const result = await this.welcomeVariantRepo.delete({ id: vId, templateId: id });
+    if (result.affected === 0) throw new NotFoundException('Variant not found');
+    return { ok: true };
+  }
+
+  // ── Goodbye variants ──────────────────────────────────
+
+  @Get(':id/goodbye-variants')
+  async listGoodbyeVariants(@Param('id') id: string) {
+    await this.ensureTemplate(id);
+    const rows = await this.goodbyeVariantRepo.find({ where: { templateId: id } });
+    return rows.sort((a, b) => a.orderIndex - b.orderIndex);
+  }
+
+  @Post(':id/goodbye-variants')
+  async addGoodbyeVariant(@Param('id') id: string, @Body() body: TemplateVariantBody) {
+    await this.ensureTemplate(id);
+    const text = (body?.text ?? '').toString();
+    if (!text.trim()) throw new BadRequestException('text required');
+    const v = this.goodbyeVariantRepo.create({
+      templateId: id,
+      text,
+      orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : 0,
+      ...mergeImageFields(body),
+    });
+    await this.goodbyeVariantRepo.save(v);
+    return v;
+  }
+
+  @Patch(':id/goodbye-variants/:vId')
+  async updateGoodbyeVariant(
+    @Param('id') id: string,
+    @Param('vId') vId: string,
+    @Body() body: Partial<TemplateVariantBody>,
+  ) {
+    await this.ensureTemplate(id);
+    const v = await this.goodbyeVariantRepo.findOne({ where: { id: vId, templateId: id } });
+    if (!v) throw new NotFoundException('Variant not found');
+    if (body.text !== undefined) v.text = body.text.toString();
+    if (body.orderIndex !== undefined) v.orderIndex = body.orderIndex;
+    Object.assign(v, mergeImageFields(body));
+    await this.goodbyeVariantRepo.save(v);
+    return v;
+  }
+
+  @Delete(':id/goodbye-variants/:vId')
+  async removeGoodbyeVariant(@Param('id') id: string, @Param('vId') vId: string) {
+    await this.ensureTemplate(id);
+    const result = await this.goodbyeVariantRepo.delete({ id: vId, templateId: id });
+    if (result.affected === 0) throw new NotFoundException('Variant not found');
+    return { ok: true };
+  }
+}
+
+interface TemplateVariantBody {
+  text: string;
+  orderIndex?: number;
+  imageEnabled?: boolean;
+  imageSendMode?: 'with_text' | 'before_text' | 'image_only';
+  backgroundImageUrl?: string | null;
+  backgroundFill?: string | null;
+  avatarConfig?: Record<string, unknown> | null;
+  usernameConfig?: Record<string, unknown> | null;
+  imageTextConfig?: Record<string, unknown> | null;
+}
+
+function mergeImageFields(body: Partial<TemplateVariantBody>): Partial<TemplateVariantBody> {
+  const out: Record<string, unknown> = {};
+  if (body.imageEnabled !== undefined) out.imageEnabled = !!body.imageEnabled;
+  if (body.imageSendMode !== undefined) {
+    out.imageSendMode =
+      body.imageSendMode === 'before_text' || body.imageSendMode === 'image_only'
+        ? body.imageSendMode
+        : 'with_text';
+  }
+  if (body.backgroundImageUrl !== undefined) {
+    out.backgroundImageUrl = body.backgroundImageUrl?.toString().trim() || null;
+  }
+  if (body.backgroundFill !== undefined) out.backgroundFill = body.backgroundFill ?? null;
+  if (body.avatarConfig !== undefined) out.avatarConfig = body.avatarConfig ?? null;
+  if (body.usernameConfig !== undefined) out.usernameConfig = body.usernameConfig ?? null;
+  if (body.imageTextConfig !== undefined) out.imageTextConfig = body.imageTextConfig ?? null;
+  return out as Partial<TemplateVariantBody>;
 }
 
 /**

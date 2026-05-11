@@ -13,7 +13,13 @@ import { TemplateCategoryGrant } from './entities/template-category-grant.entity
 import { TemplateEmoji } from './entities/template-emoji.entity';
 import { TemplateRole } from './entities/template-role.entity';
 import { TemplateSticker } from './entities/template-sticker.entity';
+import { TemplateWelcomeVariant } from './entities/template-welcome-variant.entity';
+import { TemplateGoodbyeVariant } from './entities/template-goodbye-variant.entity';
 import { UserTemplateAccess } from './entities/user-template-access.entity';
+import { WelcomeConfig } from '../welcome/entities/welcome-config.entity';
+import { WelcomeTemplate } from '../welcome/entities/welcome-template.entity';
+import { GoodbyeConfig } from '../welcome/entities/goodbye-config.entity';
+import { GoodbyeTemplate } from '../welcome/entities/goodbye-template.entity';
 import { NoCacheInterceptor } from './no-cache.interceptor';
 import { TemplateAccessAdminController, TemplateAccessController } from './template-access.controller';
 import { ServerTemplatesController } from './server-templates.controller';
@@ -32,9 +38,15 @@ import { TemplateInstallService } from './template-install.service';
       TemplateEmoji,
       TemplateSticker,
       TemplateCategoryGrant,
+      TemplateWelcomeVariant,
+      TemplateGoodbyeVariant,
       UserTemplateAccess,
       GuildMessage,
       GuildReactionRole,
+      WelcomeConfig,
+      WelcomeTemplate,
+      GoodbyeConfig,
+      GoodbyeTemplate,
     ]),
     ServerStatsModule,
   ],

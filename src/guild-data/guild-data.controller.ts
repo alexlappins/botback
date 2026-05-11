@@ -70,6 +70,69 @@ export class GuildDataController {
     });
   }
 
+  /**
+   * Create a brand-new message in Discord and snapshot it as a GuildMessage
+   * so the user can later edit/delete it via the dashboard.
+   */
+  @Post('messages')
+  async createMessage(
+    @Param('guildId') guildId: string,
+    @Body()
+    body: {
+      discordChannelId: string;
+      content?: string | null;
+      embedJson?: Record<string, unknown> | string | null;
+      componentsJson?: unknown[] | string | null;
+    },
+    @Req() req: Request,
+  ) {
+    await this.ensureGuildAccess(guildId, req);
+    const channelId = body?.discordChannelId?.trim();
+    if (!channelId) throw new BadRequestException('discordChannelId required');
+
+    const content = body.content?.trim() || null;
+    const embedJson = parseJsonbObject(body.embedJson ?? null);
+    const componentsJson = parseJsonbArray(body.componentsJson ?? null);
+
+    if (!content && !embedJson && !(componentsJson && componentsJson.length)) {
+      throw new BadRequestException('Provide at least content, embed, or components');
+    }
+
+    const guild =
+      this.client.guilds.cache.get(guildId) ??
+      (await this.client.guilds.fetch(guildId).catch(() => null));
+    if (!guild) throw new NotFoundException('Guild not found');
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel?.isTextBased()) {
+      throw new BadRequestException('Selected channel is not a text channel');
+    }
+
+    let sent;
+    try {
+      sent = await (channel as TextChannel).send({
+        content: content ?? undefined,
+        embeds: (embedJson ? [embedJson] : []) as never,
+        components: (componentsJson ?? []) as never,
+      });
+    } catch (e) {
+      throw new BadRequestException(
+        `Failed to send message to Discord: ${(e as Error).message}`,
+      );
+    }
+
+    const row = this.messageRepo.create({
+      guildId,
+      discordChannelId: channelId,
+      discordMessageId: sent.id,
+      channelName: (channel as TextChannel).name ?? 'unknown',
+      content,
+      embedJson,
+      componentsJson,
+    });
+    await this.messageRepo.save(row);
+    return row;
+  }
+
   @Patch('messages/:msgId')
   async updateMessage(
     @Param('guildId') guildId: string,

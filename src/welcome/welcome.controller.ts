@@ -23,17 +23,16 @@ import type { SessionUser } from '../auth/session.serializer';
 import { GuildsService } from '../dashboard/guilds.service';
 
 import { WelcomeService } from './welcome.service';
-import type { WelcomeFormDto, GoodbyeFormDto, ImageFormFields } from './welcome.service';
+import type {
+  WelcomeFormDto,
+  GoodbyeFormDto,
+  VariantImageFields,
+} from './welcome.service';
 import { resolveVariables, SUPPORTED_VARIABLES } from './variable-resolver';
 import { ImageRendererService } from './image-renderer.service';
-import type {
-  AvatarConfig,
-  ImageTextBlock,
-  UsernameConfig,
-} from './image-config.types';
+import type { ImageTextBlock } from './image-config.types';
 
-interface PreviewImageBody extends ImageFormFields {
-  /** Optional sample text to render in the imageTextConfig slot for preview only */
+interface PreviewImageBody extends VariantImageFields {
   sampleText?: string;
 }
 
@@ -75,7 +74,11 @@ export class WelcomeController {
   }
 
   @Post('welcome/test')
-  async testWelcome(@Param('guildId') guildId: string, @Req() req: Request) {
+  async testWelcome(
+    @Param('guildId') guildId: string,
+    @Body() body: { variantId?: string; returning?: boolean },
+    @Req() req: Request,
+  ) {
     await this.ensureAccess(guildId, req);
     const user = (req as Request & { user: SessionUser }).user;
     const cfg = await this.welcome.getWelcome(guildId);
@@ -92,29 +95,30 @@ export class WelcomeController {
       throw new BadRequestException('You must be a member of the guild to test');
     }
 
-    const text = this.welcome.pickWelcomeText(cfg);
-    const resolved = text ? resolveVariables(text, { user: member.user, member, guild }) : '';
+    let variant = body?.variantId
+      ? cfg.templates.find((t) => t.id === body.variantId)
+      : null;
+    if (!variant) {
+      variant = this.welcome.pickWelcomeVariant(cfg, { returning: !!body?.returning }) ?? null;
+    }
+    if (!variant) throw new BadRequestException('No welcome variants configured');
 
-    const components = buildLinkButtons(cfg.buttonsConfig);
+    const resolved = resolveVariables(variant.text, {
+      user: member.user,
+      member,
+      guild,
+    });
+    const components = buildLinkButtons(variant.buttonsConfig);
     const files: AttachmentBuilder[] = [];
-    if (cfg.imageEnabled) {
-      const buf = await this.renderer.render(
-        {
-          backgroundImageUrl: cfg.backgroundImageUrl,
-          backgroundFill: cfg.backgroundFill,
-          avatarConfig: cfg.avatarConfig,
-          usernameConfig: cfg.usernameConfig,
-          imageTextConfig: cfg.imageTextConfig,
-        },
-        { user: member.user, member, guild },
-      );
+    if (variant.imageEnabled) {
+      const buf = await this.renderer.render(variant, {
+        user: member.user,
+        member,
+        guild,
+      });
       if (buf) files.push(new AttachmentBuilder(buf, { name: 'welcome.png' }));
     }
-
-    const messageContent = pickContentByMode(cfg.imageSendMode, resolved, files.length > 0);
-    if (!messageContent && !files.length && !components.length) {
-      throw new BadRequestException('Nothing to send — configure text or image first');
-    }
+    const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
 
     if (cfg.sendMode === 'dm') {
       try {
@@ -153,6 +157,92 @@ export class WelcomeController {
     @Res() res: Response,
   ): Promise<void> {
     await this.ensureAccess(guildId, req);
+    await this.renderPreviewInto(guildId, body, req, res);
+  }
+
+  // ── Goodbye ────────────────────────────────────────────
+
+  @Get('goodbye')
+  async getGoodbye(@Param('guildId') guildId: string, @Req() req: Request) {
+    await this.ensureAccess(guildId, req);
+    const cfg = await this.welcome.getGoodbye(guildId);
+    return { ...cfg, variables: SUPPORTED_VARIABLES };
+  }
+
+  @Put('goodbye')
+  async updateGoodbye(
+    @Param('guildId') guildId: string,
+    @Body() body: GoodbyeFormDto,
+    @Req() req: Request,
+  ) {
+    await this.ensureAccess(guildId, req);
+    return this.welcome.updateGoodbye(guildId, body);
+  }
+
+  @Post('goodbye/test')
+  async testGoodbye(
+    @Param('guildId') guildId: string,
+    @Body() body: { variantId?: string },
+    @Req() req: Request,
+  ) {
+    await this.ensureAccess(guildId, req);
+    const user = (req as Request & { user: SessionUser }).user;
+    const cfg = await this.welcome.getGoodbye(guildId);
+
+    const guild =
+      this.client.guilds.cache.get(guildId) ??
+      (await this.client.guilds.fetch(guildId).catch(() => null));
+    if (!guild) throw new NotFoundException('Guild not found');
+    if (!cfg.channelId) throw new BadRequestException('Goodbye channel not selected');
+    const channel = guild.channels.cache.get(cfg.channelId);
+    if (!channel?.isTextBased()) {
+      throw new BadRequestException('Configured channel is not a text channel');
+    }
+
+    const member =
+      guild.members.cache.get(user.id) ??
+      (await guild.members.fetch(user.id).catch(() => null));
+    const userObj = member?.user ?? (await this.client.users.fetch(user.id));
+
+    let variant = body?.variantId
+      ? cfg.templates.find((t) => t.id === body.variantId)
+      : null;
+    if (!variant) variant = this.welcome.pickGoodbyeVariant(cfg) ?? null;
+    if (!variant) throw new BadRequestException('No goodbye variants configured');
+
+    const resolved = resolveVariables(variant.text, { user: userObj, member, guild });
+    const files: AttachmentBuilder[] = [];
+    if (variant.imageEnabled) {
+      const buf = await this.renderer.render(variant, { user: userObj, member, guild });
+      if (buf) files.push(new AttachmentBuilder(buf, { name: 'goodbye.png' }));
+    }
+    const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
+
+    await (channel as TextChannel).send({ content: messageContent || undefined, files });
+    return { ok: true, sent: resolved, withImage: files.length > 0 };
+  }
+
+  @Post('goodbye/preview-image')
+  @Header('Content-Type', 'image/png')
+  @Header('Cache-Control', 'no-store')
+  async previewGoodbyeImage(
+    @Param('guildId') guildId: string,
+    @Body() body: PreviewImageBody,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.ensureAccess(guildId, req);
+    await this.renderPreviewInto(guildId, body, req, res);
+  }
+
+  // ── Shared preview renderer ────────────────────────────
+
+  private async renderPreviewInto(
+    guildId: string,
+    body: PreviewImageBody,
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const user = (req as Request & { user: SessionUser }).user;
     const guild =
       this.client.guilds.cache.get(guildId) ??
@@ -179,84 +269,6 @@ export class WelcomeController {
     );
     if (!buf) throw new BadRequestException('Failed to render preview');
     res.end(buf);
-  }
-
-  // ── Goodbye ────────────────────────────────────────────
-
-  @Get('goodbye')
-  async getGoodbye(@Param('guildId') guildId: string, @Req() req: Request) {
-    await this.ensureAccess(guildId, req);
-    const cfg = await this.welcome.getGoodbye(guildId);
-    return { ...cfg, variables: SUPPORTED_VARIABLES };
-  }
-
-  @Put('goodbye')
-  async updateGoodbye(
-    @Param('guildId') guildId: string,
-    @Body() body: GoodbyeFormDto,
-    @Req() req: Request,
-  ) {
-    await this.ensureAccess(guildId, req);
-    return this.welcome.updateGoodbye(guildId, body);
-  }
-
-  @Post('goodbye/test')
-  async testGoodbye(@Param('guildId') guildId: string, @Req() req: Request) {
-    await this.ensureAccess(guildId, req);
-    const user = (req as Request & { user: SessionUser }).user;
-    const cfg = await this.welcome.getGoodbye(guildId);
-
-    const guild =
-      this.client.guilds.cache.get(guildId) ??
-      (await this.client.guilds.fetch(guildId).catch(() => null));
-    if (!guild) throw new NotFoundException('Guild not found');
-    if (!cfg.channelId) throw new BadRequestException('Goodbye channel not selected');
-    const channel = guild.channels.cache.get(cfg.channelId);
-    if (!channel?.isTextBased()) {
-      throw new BadRequestException('Configured channel is not a text channel');
-    }
-
-    const member =
-      guild.members.cache.get(user.id) ??
-      (await guild.members.fetch(user.id).catch(() => null));
-    const userObj = member?.user ?? (await this.client.users.fetch(user.id));
-
-    const text = this.welcome.pickGoodbyeText(cfg);
-    const resolved = text ? resolveVariables(text, { user: userObj, member, guild }) : '';
-
-    const files: AttachmentBuilder[] = [];
-    if (cfg.imageEnabled) {
-      const buf = await this.renderer.render(
-        {
-          backgroundImageUrl: cfg.backgroundImageUrl,
-          backgroundFill: cfg.backgroundFill,
-          avatarConfig: cfg.avatarConfig,
-          usernameConfig: cfg.usernameConfig,
-          imageTextConfig: cfg.imageTextConfig,
-        },
-        { user: userObj, member, guild },
-      );
-      if (buf) files.push(new AttachmentBuilder(buf, { name: 'goodbye.png' }));
-    }
-
-    const messageContent = pickContentByMode(cfg.imageSendMode, resolved, files.length > 0);
-    if (!messageContent && !files.length) {
-      throw new BadRequestException('Nothing to send — configure text or image first');
-    }
-    await (channel as TextChannel).send({ content: messageContent || undefined, files });
-    return { ok: true, sent: resolved, withImage: files.length > 0 };
-  }
-
-  @Post('goodbye/preview-image')
-  @Header('Content-Type', 'image/png')
-  @Header('Cache-Control', 'no-store')
-  async previewGoodbyeImage(
-    @Param('guildId') guildId: string,
-    @Body() body: PreviewImageBody,
-    @Req() req: Request,
-    @Res() res: Response,
-  ): Promise<void> {
-    return this.previewWelcomeImage(guildId, body, req, res);
   }
 }
 
@@ -291,7 +303,6 @@ function pickContentByMode(
 ): string {
   if (!hasImage) return text;
   if (mode === 'image_only') return '';
-  // 'with_text' and 'before_text' both attach the text — Discord renders the image either way.
   return text;
 }
 
@@ -302,5 +313,3 @@ function applySampleTextOverride(
   if (!text || !sample) return text;
   return { ...text, text: sample };
 }
-
-export type { AvatarConfig, ImageTextBlock, UsernameConfig };

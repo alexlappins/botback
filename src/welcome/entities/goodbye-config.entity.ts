@@ -9,15 +9,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { GoodbyeTemplate } from './goodbye-template.entity';
-import type {
-  AvatarConfig,
-  ImageTextBlock,
-  UsernameConfig,
-} from '../image-config.types';
 
 /**
- * Per-guild Goodbye configuration.
- * Channel only (no DM since the user already left).
+ * Per-guild Goodbye configuration. Delivery-level settings only;
+ * full message bodies live per-variant on GoodbyeTemplate.
  */
 @Entity('goodbye_configs')
 @Index(['guildId'], { unique: true })
@@ -33,27 +28,6 @@ export class GoodbyeConfig {
 
   @Column({ name: 'channel_id', type: 'varchar', length: 32, nullable: true })
   channelId: string | null;
-
-  @Column({ name: 'image_enabled', type: 'boolean', default: false })
-  imageEnabled: boolean;
-
-  @Column({ name: 'image_send_mode', type: 'varchar', length: 16, default: 'with_text' })
-  imageSendMode: 'with_text' | 'before_text' | 'image_only';
-
-  @Column({ name: 'background_image_url', type: 'varchar', length: 1024, nullable: true })
-  backgroundImageUrl: string | null;
-
-  @Column({ name: 'avatar_config', type: 'jsonb', nullable: true })
-  avatarConfig: AvatarConfig | null;
-
-  @Column({ name: 'username_config', type: 'jsonb', nullable: true })
-  usernameConfig: UsernameConfig | null;
-
-  @Column({ name: 'image_text_config', type: 'jsonb', nullable: true })
-  imageTextConfig: ImageTextBlock | null;
-
-  @Column({ name: 'background_fill', type: 'varchar', length: 16, nullable: true })
-  backgroundFill: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

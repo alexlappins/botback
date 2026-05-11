@@ -6,6 +6,8 @@ import { AttachmentBuilder, ButtonStyle, TextChannel } from 'discord.js';
 import { WelcomeService } from './welcome.service';
 import { ImageRendererService } from './image-renderer.service';
 import { resolveVariables } from './variable-resolver';
+import type { WelcomeTemplate } from './entities/welcome-template.entity';
+import type { GoodbyeTemplate } from './entities/goodbye-template.entity';
 
 @Injectable()
 export class WelcomeListeners {
@@ -22,36 +24,33 @@ export class WelcomeListeners {
   ): Promise<void> {
     try {
       const cfg = await this.welcome.getWelcome(member.guild.id);
-      // Always record sighting, even if welcome is disabled — so toggling on later still detects returns.
+      // Always record sighting even if welcome is disabled — so flipping the
+      // feature on later still correctly identifies returns.
       const returning = await this.welcome.markSeenAndCheckReturning(
         member.guild.id,
         member.user.id,
       );
 
       if (!cfg.enabled) return;
+      const variant = this.welcome.pickWelcomeVariant(cfg, { returning });
+      if (!variant) return;
 
-      const text = this.welcome.pickWelcomeText(cfg, { returning });
-      const resolved = text
-        ? resolveVariables(text, { user: member.user, member, guild: member.guild })
-        : '';
-
-      const components = buildLinkButtons(cfg.buttonsConfig);
+      const resolved = resolveVariables(variant.text, {
+        user: member.user,
+        member,
+        guild: member.guild,
+      });
+      const components = buildLinkButtons(variant.buttonsConfig);
       const files: AttachmentBuilder[] = [];
-      if (cfg.imageEnabled) {
-        const buf = await this.renderer.render(
-          {
-            backgroundImageUrl: cfg.backgroundImageUrl,
-            backgroundFill: cfg.backgroundFill,
-            avatarConfig: cfg.avatarConfig,
-            usernameConfig: cfg.usernameConfig,
-            imageTextConfig: cfg.imageTextConfig,
-          },
-          { user: member.user, member, guild: member.guild },
-        );
+      if (variant.imageEnabled) {
+        const buf = await this.renderer.render(variant, {
+          user: member.user,
+          member,
+          guild: member.guild,
+        });
         if (buf) files.push(new AttachmentBuilder(buf, { name: 'welcome.png' }));
       }
-
-      const messageContent = pickContentByMode(cfg.imageSendMode, resolved, files.length > 0);
+      const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
       if (!messageContent && !files.length && !components.length) return;
 
       if (cfg.sendMode === 'dm') {
@@ -95,38 +94,27 @@ export class WelcomeListeners {
       const cfg = await this.welcome.getGoodbye(member.guild.id);
       if (!cfg.enabled || !cfg.channelId) return;
 
-      const text = this.welcome.pickGoodbyeText(cfg);
-      const resolved = text
-        ? resolveVariables(text, {
-            user: member.user,
-            member: member.partial ? null : member,
-            guild: member.guild,
-          })
-        : '';
+      const variant = this.welcome.pickGoodbyeVariant(cfg);
+      if (!variant) return;
 
       const channel = member.guild.channels.cache.get(cfg.channelId);
       if (!channel?.isTextBased()) return;
 
+      const resolved = resolveVariables(variant.text, {
+        user: member.user,
+        member: member.partial ? null : member,
+        guild: member.guild,
+      });
       const files: AttachmentBuilder[] = [];
-      if (cfg.imageEnabled) {
-        const buf = await this.renderer.render(
-          {
-            backgroundImageUrl: cfg.backgroundImageUrl,
-            backgroundFill: cfg.backgroundFill,
-            avatarConfig: cfg.avatarConfig,
-            usernameConfig: cfg.usernameConfig,
-            imageTextConfig: cfg.imageTextConfig,
-          },
-          {
-            user: member.user,
-            member: member.partial ? null : member,
-            guild: member.guild,
-          },
-        );
+      if (variant.imageEnabled) {
+        const buf = await this.renderer.render(variant, {
+          user: member.user,
+          member: member.partial ? null : member,
+          guild: member.guild,
+        });
         if (buf) files.push(new AttachmentBuilder(buf, { name: 'goodbye.png' }));
       }
-
-      const messageContent = pickContentByMode(cfg.imageSendMode, resolved, files.length > 0);
+      const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
       if (!messageContent && !files.length) return;
       await (channel as TextChannel)
         .send({ content: messageContent || undefined, files })
@@ -174,3 +162,5 @@ function pickContentByMode(
   if (mode === 'image_only') return '';
   return text;
 }
+
+export type { WelcomeTemplate, GoodbyeTemplate };

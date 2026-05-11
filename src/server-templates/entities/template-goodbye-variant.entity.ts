@@ -6,30 +6,25 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { GoodbyeConfig } from './goodbye-config.entity';
+import { ServerTemplate } from './server-template.entity';
 import type {
   AvatarConfig,
   ImageTextBlock,
   UsernameConfig,
-} from '../image-config.types';
+} from '../../welcome/image-config.types';
 
-/**
- * One goodbye message variant. Each variant is a full message — text plus its
- * own image (avatar, text overlay, background). The parent GoodbyeConfig only
- * carries delivery settings (channel).
- */
-@Entity('goodbye_templates')
-@Index(['configId'])
-export class GoodbyeTemplate {
+@Entity('template_goodbye_variants')
+@Index(['templateId'])
+export class TemplateGoodbyeVariant {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'config_id', type: 'uuid' })
-  configId: string;
+  @Column({ name: 'template_id', type: 'uuid' })
+  templateId: string;
 
-  @ManyToOne(() => GoodbyeConfig, (c) => c.templates, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'config_id' })
-  config: GoodbyeConfig;
+  @ManyToOne(() => ServerTemplate, (t) => t.goodbyeVariants, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'template_id' })
+  template: ServerTemplate;
 
   @Column({ type: 'text' })
   text: string;

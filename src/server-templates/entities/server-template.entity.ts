@@ -15,6 +15,8 @@ import { TemplateMessage } from './template-message.entity';
 import { TemplateReactionRole } from './template-reaction-role.entity';
 import { TemplateRole } from './template-role.entity';
 import { TemplateSticker } from './template-sticker.entity';
+import { TemplateWelcomeVariant } from './template-welcome-variant.entity';
+import { TemplateGoodbyeVariant } from './template-goodbye-variant.entity';
 
 @Entity('server_templates')
 export class ServerTemplate {
@@ -70,6 +72,28 @@ export class ServerTemplate {
   @Column({ name: 'verified_hide_role_name', type: 'varchar', length: 128, nullable: true })
   verifiedHideRoleName: string | null;
 
+  // ── Welcome (template-level settings) ──
+  @Column({ name: 'welcome_enabled', type: 'boolean', default: false })
+  welcomeEnabled: boolean;
+
+  /** 'channel' | 'dm' — DM doesn't need a channel name */
+  @Column({ name: 'welcome_send_mode', type: 'varchar', length: 16, default: 'channel' })
+  welcomeSendMode: 'channel' | 'dm';
+
+  /** Bound to a channel by NAME inside the template. Resolved to ID at install. */
+  @Column({ name: 'welcome_channel_name', type: 'varchar', length: 128, nullable: true })
+  welcomeChannelName: string | null;
+
+  @Column({ name: 'welcome_returning_enabled', type: 'boolean', default: false })
+  welcomeReturningEnabled: boolean;
+
+  // ── Goodbye (template-level settings) ──
+  @Column({ name: 'goodbye_enabled', type: 'boolean', default: false })
+  goodbyeEnabled: boolean;
+
+  @Column({ name: 'goodbye_channel_name', type: 'varchar', length: 128, nullable: true })
+  goodbyeChannelName: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -102,4 +126,10 @@ export class ServerTemplate {
 
   @OneToMany(() => TemplateCategoryGrant, (g) => g.template)
   categoryGrants: TemplateCategoryGrant[];
+
+  @OneToMany(() => TemplateWelcomeVariant, (v) => v.template)
+  welcomeVariants: TemplateWelcomeVariant[];
+
+  @OneToMany(() => TemplateGoodbyeVariant, (v) => v.template)
+  goodbyeVariants: TemplateGoodbyeVariant[];
 }

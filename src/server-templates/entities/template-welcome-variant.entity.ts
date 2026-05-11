@@ -6,37 +6,32 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { WelcomeConfig } from './welcome-config.entity';
+import { ServerTemplate } from './server-template.entity';
 import type {
   AvatarConfig,
   ImageTextBlock,
   UsernameConfig,
-} from '../image-config.types';
+} from '../../welcome/image-config.types';
+import type { WelcomeVariantRole } from '../../welcome/entities/welcome-template.entity';
 
 /**
- * One welcome message variant. A WelcomeConfig holds multiple variants,
- * organized into two pools by role:
- *   'new_member' — picked randomly on guildMemberAdd for first-time joiners
- *   'returning_member' — picked when returningMemberEnabled and the user was seen before
- *
- * Each variant is a fully self-contained message: text, image (with avatar
- * and text overlays), buttons. The parent WelcomeConfig only carries
- * delivery settings (channel/DM, returningEnabled toggle).
+ * One welcome message variant attached to a ServerTemplate.
+ * Mirrors the per-guild WelcomeTemplate shape so the owner can configure
+ * exactly what end-users will see, and the install service can copy it
+ * into the buyer's WelcomeConfig + variants 1:1.
  */
-export type WelcomeVariantRole = 'new_member' | 'returning_member';
-
-@Entity('welcome_templates')
-@Index(['configId'])
-export class WelcomeTemplate {
+@Entity('template_welcome_variants')
+@Index(['templateId'])
+export class TemplateWelcomeVariant {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'config_id', type: 'uuid' })
-  configId: string;
+  @Column({ name: 'template_id', type: 'uuid' })
+  templateId: string;
 
-  @ManyToOne(() => WelcomeConfig, (c) => c.templates, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'config_id' })
-  config: WelcomeConfig;
+  @ManyToOne(() => ServerTemplate, (t) => t.welcomeVariants, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'template_id' })
+  template: ServerTemplate;
 
   @Column({ name: 'role', type: 'varchar', length: 24, default: 'new_member' })
   role: WelcomeVariantRole;
@@ -44,11 +39,9 @@ export class WelcomeTemplate {
   @Column({ type: 'text' })
   text: string;
 
-  /** Display order within its role pool */
   @Column({ name: 'order_index', type: 'int', default: 0 })
   orderIndex: number;
 
-  // ── Per-variant image config ──
   @Column({ name: 'image_enabled', type: 'boolean', default: false })
   imageEnabled: boolean;
 
@@ -70,7 +63,6 @@ export class WelcomeTemplate {
   @Column({ name: 'image_text_config', type: 'jsonb', nullable: true })
   imageTextConfig: ImageTextBlock | null;
 
-  /** Up to 3 link buttons attached to this variant's message */
   @Column({ name: 'buttons_config', type: 'jsonb', nullable: true })
   buttonsConfig: { label: string; url: string; emoji?: string | null }[] | null;
 }
