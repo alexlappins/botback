@@ -188,7 +188,7 @@ export class GuildsController {
   @Post(':id/install-template')
   async installTemplate(
     @Param('id') guildId: string,
-    @Body() body: { templateId: string },
+    @Body() body: { templateId: string; levelingMode?: 'overwrite' | 'keep' | 'merge' },
     @Req() req: Request,
   ) {
     await this.ensureGuildAccess(guildId, req);
@@ -209,7 +209,13 @@ export class GuildsController {
         );
       }
     }
-    const result = await this.templateInstall.install(guildId, body.templateId);
+    const levelingMode =
+      body.levelingMode === 'keep' || body.levelingMode === 'merge'
+        ? body.levelingMode
+        : 'overwrite';
+    const result = await this.templateInstall.install(guildId, body.templateId, {
+      levelingMode,
+    });
     if (!result.ok) throw new BadRequestException(result.error);
 
     // Mark this access as used (oneShot tracking + purchases history)

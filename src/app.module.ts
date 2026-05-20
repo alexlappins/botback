@@ -18,6 +18,8 @@ import { StoreModule } from './store/store.module';
 import { TemplatesModule } from './templates/templates.module';
 import { UploadModule } from './upload/upload.module';
 import { WelcomeModule } from './welcome/welcome.module';
+import { LevelingModule } from './leveling/leveling.module';
+import { FeatureFlagsModule } from './common/feature-flags/feature-flags.module';
 
 @Module({
   imports: [
@@ -51,6 +53,8 @@ import { WelcomeModule } from './welcome/welcome.module';
     UploadModule,
     GuildDataModule,
     WelcomeModule,
+    FeatureFlagsModule,
+    LevelingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -140,6 +140,7 @@ export class ServerTemplatesController {
       welcomeReturningEnabled?: boolean;
       goodbyeEnabled?: boolean;
       goodbyeChannelName?: string | null;
+      levelingEnabled?: boolean;
     },
   ) {
     await this.ensureTemplate(id);
@@ -192,6 +193,7 @@ export class ServerTemplatesController {
     if (body.goodbyeChannelName !== undefined) {
       wgFields.goodbyeChannelName = body.goodbyeChannelName?.trim() || null;
     }
+    if (body.levelingEnabled !== undefined) wgFields.levelingEnabled = !!body.levelingEnabled;
     if (Object.keys(wgFields).length) await this.templateRepo.update(id, wgFields);
 
     return this.templateRepo.findOne({
@@ -202,6 +204,7 @@ export class ServerTemplatesController {
         'verifiedHideCategoryName', 'verifiedHideRoleName',
         'welcomeEnabled', 'welcomeSendMode', 'welcomeChannelName', 'welcomeReturningEnabled',
         'goodbyeEnabled', 'goodbyeChannelName',
+        'levelingEnabled',
         'createdAt', 'updatedAt',
       ],
     });

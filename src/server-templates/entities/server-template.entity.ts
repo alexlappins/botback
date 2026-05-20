@@ -94,6 +94,14 @@ export class ServerTemplate {
   @Column({ name: 'goodbye_channel_name', type: 'varchar', length: 128, nullable: true })
   goodbyeChannelName: string | null;
 
+  // ── Leveling (template-level settings) ──
+  // Opt-in switch. The actual leveling config lives in template_leveling_settings
+  // + template_tiers + template_role_rewards + template_no_xp_* — those are not
+  // mapped here as ORM relations to avoid pulling the leveling module into this
+  // entity's import graph. The deploy service fetches them by templateId.
+  @Column({ name: 'leveling_enabled', type: 'boolean', default: false })
+  levelingEnabled: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

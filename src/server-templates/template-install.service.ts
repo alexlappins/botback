@@ -23,6 +23,16 @@ import { GoodbyeConfig } from '../welcome/entities/goodbye-config.entity';
 import { GoodbyeTemplate } from '../welcome/entities/goodbye-template.entity';
 import { TemplateWelcomeVariant } from './entities/template-welcome-variant.entity';
 import { TemplateGoodbyeVariant } from './entities/template-goodbye-variant.entity';
+import {
+  TemplateLevelingDeployService,
+  type LevelingDeployMode,
+  type LevelingDeployReport,
+} from '../leveling/template-leveling-deploy.service';
+
+export interface TemplateInstallOptions {
+  /** How to merge template leveling config with whatever's on the destination guild. */
+  levelingMode?: LevelingDeployMode;
+}
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
   'joinLeave',
@@ -68,6 +78,7 @@ export class TemplateInstallService {
     private readonly goodbyeVariantRepo: Repository<GoodbyeTemplate>,
     private readonly storage: GuildStorageService,
     private readonly serverStats: ServerStatsService,
+    private readonly levelingDeploy: TemplateLevelingDeployService,
   ) {}
 
   async check(guildId: string, templateId: string): Promise<TemplateInstallCheckReport> {
@@ -148,7 +159,12 @@ export class TemplateInstallService {
     };
   }
 
-  async install(guildId: string, templateId: string): Promise<TemplateInstallReport> {
+  async install(
+    guildId: string,
+    templateId: string,
+    options: TemplateInstallOptions = {},
+  ): Promise<TemplateInstallReport> {
+    const levelingMode: LevelingDeployMode = options.levelingMode ?? 'overwrite';
     const emptySummary: TemplateInstallSummary = {
       rolesCreated: 0,
       categoriesCreated: 0,
@@ -160,6 +176,10 @@ export class TemplateInstallService {
       stickersCreated: 0,
       welcomeVariantsApplied: 0,
       goodbyeVariantsApplied: 0,
+      levelingTiersApplied: 0,
+      levelingRoleRewardsApplied: 0,
+      levelingNoXpRolesApplied: 0,
+      levelingNoXpChannelsApplied: 0,
     };
     const emptySkipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -240,6 +260,10 @@ export class TemplateInstallService {
       stickersCreated: 0,
       welcomeVariantsApplied: 0,
       goodbyeVariantsApplied: 0,
+      levelingTiersApplied: 0,
+      levelingRoleRewardsApplied: 0,
+      levelingNoXpRolesApplied: 0,
+      levelingNoXpChannelsApplied: 0,
     };
     const skipped: TemplateInstallSkipped = {
       messageChannelMissing: [],
@@ -821,11 +845,42 @@ export class TemplateInstallService {
         );
       }
 
+      // ─── Step 7: Leveling ──────────────────────────────
+      // Owner-admin can opt into shipping a leveling config with the template
+      // (`server_templates.leveling_enabled`). The deploy service handles name
+      // resolution + the overwrite/keep/merge choice; we just thread its
+      // findings into the install report.
+      let levelingReport: LevelingDeployReport | undefined;
+      if (template.levelingEnabled) {
+        try {
+          levelingReport = await this.levelingDeploy.install(
+            guild,
+            template.id,
+            levelingMode,
+            template.levelingEnabled,
+          );
+          if (levelingReport.applied) {
+            summary.levelingTiersApplied = levelingReport.summary.tiers;
+            summary.levelingRoleRewardsApplied = levelingReport.summary.roleRewards;
+            summary.levelingNoXpRolesApplied = levelingReport.summary.noXpRoles;
+            summary.levelingNoXpChannelsApplied = levelingReport.summary.noXpChannels;
+          } else if (levelingReport.reason === 'destination_kept') {
+            warnings.push(
+              'Leveling step skipped: destination guild already had a leveling config (mode=keep).',
+            );
+          }
+          for (const w of levelingReport.warnings) warnings.push(`Leveling: ${w}`);
+        } catch (e) {
+          warnings.push(`Leveling install failed: ${(e as Error).message}`);
+        }
+      }
+
       return {
         ok: true,
         summary,
         skipped: normalizeSkipped(skipped),
         warnings: unique(warnings),
+        leveling: levelingReport,
       };
     } catch (e) {
       const err = e as Error;
@@ -1308,6 +1363,10 @@ export type TemplateInstallSummary = {
   stickersCreated: number;
   welcomeVariantsApplied: number;
   goodbyeVariantsApplied: number;
+  levelingTiersApplied: number;
+  levelingRoleRewardsApplied: number;
+  levelingNoXpRolesApplied: number;
+  levelingNoXpChannelsApplied: number;
 };
 
 export type TemplateInstallSkipped = {
@@ -1324,6 +1383,7 @@ export type TemplateInstallReport =
       summary: TemplateInstallSummary;
       skipped: TemplateInstallSkipped;
       warnings: string[];
+      leveling?: LevelingDeployReport;
     }
   | {
       ok: false;
