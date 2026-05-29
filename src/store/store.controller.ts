@@ -4,7 +4,9 @@ import {
   Controller,
   Get,
   Header,
+  Param,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -15,7 +17,18 @@ import { AdminGuard } from '../auth/admin.guard';
 import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
-import { StoreService } from './store.service';
+import type { StoreCategory } from './entities/store-template.entity';
+import { StoreService, type StoreSort } from './store.service';
+
+const VALID_SORTS: StoreSort[] = ['newest', 'popular', 'price_asc', 'price_desc'];
+const VALID_CATEGORIES: StoreCategory[] = [
+  'gaming',
+  'community',
+  'anime',
+  'crypto',
+  'streaming',
+  'other',
+];
 
 @Controller('api/store')
 export class StoreController {
@@ -27,8 +40,50 @@ export class StoreController {
   @Get('templates')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
-  listTemplates() {
-    return this.store.listPublicTemplates();
+  listTemplates(
+    @Query('q') q?: string,
+    @Query('category') category?: string,
+    @Query('tags') tagsRaw?: string,
+    @Query('sort') sort?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const cat = VALID_CATEGORIES.includes(category as StoreCategory)
+      ? (category as StoreCategory)
+      : undefined;
+    const sortKey = VALID_SORTS.includes(sort as StoreSort) ? (sort as StoreSort) : 'newest';
+    const tags = tagsRaw
+      ? tagsRaw
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : undefined;
+    return this.store.listPublicTemplates({
+      q,
+      category: cat,
+      tags,
+      sort: sortKey,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+  }
+
+  @Get('templates/featured')
+  @Header('Cache-Control', 'no-store')
+  featured() {
+    return this.store.listFeatured();
+  }
+
+  @Get('templates/facets')
+  @Header('Cache-Control', 'no-store')
+  facets() {
+    return this.store.listFacets();
+  }
+
+  @Get('templates/:id')
+  @Header('Cache-Control', 'no-store')
+  getOne(@Param('id') id: string) {
+    return this.store.getById(id);
   }
 
   @Post('checkout')
@@ -89,11 +144,31 @@ export class StoreController {
 export class AdminStoreController {
   constructor(private readonly store: StoreService) {}
 
+  @Get('templates')
+  @Header('Cache-Control', 'no-store')
+  list() {
+    return this.store.listAllForAdmin();
+  }
+
   @Post('templates/upsert')
   upsertTemplate(
     @Body()
-    body: { templateId: string; price?: number; currency?: string; isActive?: boolean },
+    body: {
+      templateId: string;
+      price?: number;
+      currency?: string;
+      isActive?: boolean;
+      longDescription?: string | null;
+      category?: StoreCategory | null;
+      tags?: string[];
+      screenshots?: string[];
+      featured?: boolean;
+      featuredOrder?: number;
+    },
   ) {
+    if (body.category !== undefined && body.category !== null && !VALID_CATEGORIES.includes(body.category)) {
+      throw new BadRequestException(`category must be one of ${VALID_CATEGORIES.join(', ')}`);
+    }
     return this.store.upsertStoreTemplate(body);
   }
 }

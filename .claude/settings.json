@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(echo \"BUILD $?\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(ls -la '/Users/aleksej/Downloads/Telegram Desktop/' 2>/dev/null | grep -i \"levelup\\\\|html\" | head -10)",
+      "Read(//Users/aleksej/Downloads/Telegram Desktop/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/aleksej/Desktop/botfront"
     ]
   }
 }
