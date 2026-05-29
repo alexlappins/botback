@@ -9,7 +9,9 @@ export type FeatureKey =
   | 'leveling_monthly_leaderboard'
   | 'xp_export'
   | 'tier_milestone_messages'
-  | 'rank_card_background_image';
+  | 'rank_card_background_image'
+  | 'twitch_live_notifications'
+  | 'twitch_channels_limit';
 
 /**
  * Default capability matrix used when a server has no plan override yet.
@@ -33,4 +35,5 @@ export class FeatureFlagsService {
 
 const DEFAULT_LIMITS: Partial<Record<FeatureKey, number>> = {
   role_rewards_limit: 50,
+  twitch_channels_limit: 3,
 };

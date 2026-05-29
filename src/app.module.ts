@@ -20,6 +20,7 @@ import { UploadModule } from './upload/upload.module';
 import { WelcomeModule } from './welcome/welcome.module';
 import { LevelingModule } from './leveling/leveling.module';
 import { FeatureFlagsModule } from './common/feature-flags/feature-flags.module';
+import { TwitchModule } from './twitch/twitch.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { FeatureFlagsModule } from './common/feature-flags/feature-flags.module'
     WelcomeModule,
     FeatureFlagsModule,
     LevelingModule,
+    TwitchModule,
   ],
   controllers: [AppController],
   providers: [AppService],
