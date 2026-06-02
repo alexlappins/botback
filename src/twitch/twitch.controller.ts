@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Inject,
   NotFoundException,
   Param,
   Patch,
@@ -13,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { Client, PermissionFlagsBits } from 'discord.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -20,8 +22,11 @@ import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
 import { GuildsService } from '../dashboard/guilds.service';
+import { PlatformEventSubscription } from './entities/platform-event-subscription.entity';
 import { StreamSubscription, type EmbedConfig } from './entities/stream-subscription.entity';
 import { TwitchAdminService } from './twitch-admin.service';
+import { TwitchEventSubService } from './twitch-eventsub.service';
+import { TwitchHelixService } from './twitch-helix.service';
 import { TwitchTokenService } from './twitch-token.service';
 
 /**
@@ -39,8 +44,13 @@ export class TwitchController {
     private readonly admin: TwitchAdminService,
     private readonly guilds: GuildsService,
     private readonly tokens: TwitchTokenService,
+    private readonly eventSub: TwitchEventSubService,
+    private readonly helix: TwitchHelixService,
+    @Inject(Client) private readonly client: Client,
     @InjectRepository(StreamSubscription)
     private readonly streamRepo: Repository<StreamSubscription>,
+    @InjectRepository(PlatformEventSubscription)
+    private readonly platformSubRepo: Repository<PlatformEventSubscription>,
   ) {}
 
   private async ensureAccess(guildId: string, req: Request): Promise<void> {
@@ -154,6 +164,113 @@ export class TwitchController {
     }
     await this.streamRepo.save(row);
     return row;
+  }
+
+  /**
+   * One-shot health snapshot for triage. Combines:
+   *   - app token + WS session state (TwitchEventSubService)
+   *   - per-subscription DB state (is_live, current_stream_id, platform-side subscription ids)
+   *   - Twitch-side view of those subscriptions (status + transport)
+   *   - destination Discord channel sanity (exists, bot can send messages there)
+   *
+   * Hit it after adding a channel + expecting a notification — it tells you in
+   * one read whether the bot, Twitch, or Discord permissions is the broken link.
+   */
+  @Get('diagnostics')
+  async diagnostics(@Param('guildId') guildId: string, @Req() req: Request) {
+    await this.ensureAccess(guildId, req);
+
+    const ws = this.eventSub.getStatus();
+    const subs = await this.streamRepo.find({
+      where: { guildId, platform: 'twitch' },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Twitch-side: list every EventSub subscription this app owns. Lets us
+    // detect "DB says subscribed but Twitch lost it" and the inverse (zombies).
+    let remoteSubs: { id: string; type: string; status: string; condition: Record<string, string> }[] = [];
+    let remoteError: string | null = null;
+    if (ws.configured) {
+      try {
+        const rs = await this.helix.listEventSubSubscriptions();
+        remoteSubs = rs.map((r) => ({
+          id: r.id,
+          type: r.type,
+          status: r.status,
+          condition: r.condition,
+        }));
+      } catch (e) {
+        remoteError = (e as Error).message;
+      }
+    }
+
+    const guild =
+      this.client.guilds.cache.get(guildId) ??
+      (await this.client.guilds.fetch(guildId).catch(() => null));
+    const me = guild?.members.me ?? null;
+
+    const subscriptionsReport = await Promise.all(
+      subs.map(async (s) => {
+        const platformRows = await this.platformSubRepo.find({
+          where: { streamSubscriptionId: s.id },
+        });
+        // Match the Twitch-side rows to ours by (type + condition.broadcaster_user_id).
+        const matchedRemote = remoteSubs.filter(
+          (r) => r.condition?.broadcaster_user_id === s.platformUserId,
+        );
+
+        // Discord channel sanity
+        const channel = guild?.channels.cache.get(s.discordChannelId) ?? null;
+        let channelOk = false;
+        let channelIssue: string | null = null;
+        if (!channel) {
+          channelIssue = 'Channel not found in cache (deleted or bot lacks View Channel)';
+        } else if (!channel.isTextBased()) {
+          channelIssue = 'Channel is not text-based';
+        } else if (me) {
+          const perms = channel.permissionsFor(me);
+          const need = [
+            { flag: PermissionFlagsBits.ViewChannel, name: 'ViewChannel' },
+            { flag: PermissionFlagsBits.SendMessages, name: 'SendMessages' },
+            { flag: PermissionFlagsBits.EmbedLinks, name: 'EmbedLinks' },
+          ];
+          const missing = need.filter((n) => !perms?.has(n.flag)).map((n) => n.name);
+          if (missing.length) channelIssue = `Bot missing perms: ${missing.join(', ')}`;
+          else channelOk = true;
+        } else {
+          channelIssue = 'Bot member not resolved on this guild';
+        }
+
+        return {
+          id: s.id,
+          platformUsername: s.platformUsername,
+          platformUserId: s.platformUserId,
+          enabled: s.enabled,
+          isLive: s.isLive,
+          currentStreamId: s.currentStreamId,
+          lastNotifiedAt: s.lastNotifiedAt,
+          discordChannelId: s.discordChannelId,
+          discordChannelOk: channelOk,
+          discordChannelIssue: channelIssue,
+          dbPlatformSubs: platformRows.map((r) => ({
+            eventType: r.eventType,
+            platformSubscriptionId: r.platformSubscriptionId,
+          })),
+          remoteTwitchSubs: matchedRemote,
+        };
+      }),
+    );
+
+    return {
+      env: {
+        twitchConfigured: ws.configured,
+      },
+      ws,
+      guild: guild ? { id: guild.id, name: guild.name, botPresent: Boolean(me) } : { error: 'Bot is not on this guild' },
+      remoteSubsTotal: remoteSubs.length,
+      remoteError,
+      subscriptions: subscriptionsReport,
+    };
   }
 
   /**

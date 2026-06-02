@@ -8,12 +8,17 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
+import WebSocket from 'ws';
 
 import { PlatformEventSubscription } from './entities/platform-event-subscription.entity';
 import { StreamSubscription } from './entities/stream-subscription.entity';
 import { StreamNotificationsService } from './stream-notifications.service';
 import { TwitchHelixService } from './twitch-helix.service';
 import { TwitchTokenService } from './twitch-token.service';
+
+// Use the `ws` package rather than Node's global WebSocket: the global is
+// gated behind a flag on Node ≤20 (and our prod still runs on PM2/Node 18-20),
+// which surfaces as a startup-loop "WebSocket is not defined" error.
 
 /**
  * Twitch EventSub WebSocket client.
@@ -107,6 +112,28 @@ export class TwitchEventSubService implements OnApplicationBootstrap, OnApplicat
   }
 
   /**
+   * Snapshot of the WS-side health, surfaced via the diagnostics REST endpoint.
+   * Read-only — does not interact with Twitch.
+   */
+  getStatus(): {
+    configured: boolean;
+    sessionId: string | null;
+    connected: boolean;
+    reconnectAttempts: number;
+    keepaliveTimeoutSec: number;
+    shuttingDown: boolean;
+  } {
+    return {
+      configured: this.tokens.isConfigured(),
+      sessionId: this.sessionId,
+      connected: this.ws?.readyState === WebSocket.OPEN,
+      reconnectAttempts: this.reconnectAttempt,
+      keepaliveTimeoutSec: this.keepaliveTimeoutSec,
+      shuttingDown: this.shuttingDown,
+    };
+  }
+
+  /**
    * Create EventSub subscriptions for a stream-subscription DB row. Called
    * by the command handler / dashboard right after inserting the row.
    * Safe to call even if there's no active session — we'll catch up on the
@@ -152,10 +179,13 @@ export class TwitchEventSubService implements OnApplicationBootstrap, OnApplicat
     try {
       const socket = new WebSocket(url);
       this.ws = socket;
-      socket.addEventListener('message', (ev) => this.onMessage(String(ev.data)));
-      socket.addEventListener('close', (ev) => this.onClose(ev.code, ev.reason));
-      socket.addEventListener('error', (ev) => {
-        this.logger.warn(`Twitch WS error: ${(ev as ErrorEvent).message ?? 'unknown'}`);
+      // EventEmitter-style API from the `ws` package — gives a real Error in
+      // the 'error' handler instead of an ErrorEvent shim, which is closer to
+      // the truth on Node and avoids @types/ws ↔ DOM ErrorEvent collisions.
+      socket.on('message', (data) => this.onMessage(data.toString('utf-8')));
+      socket.on('close', (code, reason) => this.onClose(code, reason.toString('utf-8')));
+      socket.on('error', (err: Error) => {
+        this.logger.warn(`Twitch WS error: ${err.message}`);
       });
       // Open is implicit — we wait for session_welcome to consider ourselves "up".
     } catch (e) {
