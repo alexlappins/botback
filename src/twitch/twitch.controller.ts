@@ -25,8 +25,8 @@ import { GuildsService } from '../dashboard/guilds.service';
 import { PlatformEventSubscription } from './entities/platform-event-subscription.entity';
 import { StreamSubscription, type EmbedConfig } from './entities/stream-subscription.entity';
 import { TwitchAdminService } from './twitch-admin.service';
-import { TwitchEventSubService } from './twitch-eventsub.service';
 import { TwitchHelixService } from './twitch-helix.service';
+import { TwitchSubscriptionManagerService } from './twitch-subscription-manager.service';
 import { TwitchTokenService } from './twitch-token.service';
 
 /**
@@ -44,7 +44,7 @@ export class TwitchController {
     private readonly admin: TwitchAdminService,
     private readonly guilds: GuildsService,
     private readonly tokens: TwitchTokenService,
-    private readonly eventSub: TwitchEventSubService,
+    private readonly subs: TwitchSubscriptionManagerService,
     private readonly helix: TwitchHelixService,
     @Inject(Client) private readonly client: Client,
     @InjectRepository(StreamSubscription)
@@ -180,17 +180,17 @@ export class TwitchController {
   async diagnostics(@Param('guildId') guildId: string, @Req() req: Request) {
     await this.ensureAccess(guildId, req);
 
-    const ws = this.eventSub.getStatus();
-    const subs = await this.streamRepo.find({
+    const transport = this.subs.getStatus();
+    const subRows = await this.streamRepo.find({
       where: { guildId, platform: 'twitch' },
       order: { createdAt: 'ASC' },
     });
 
     // Twitch-side: list every EventSub subscription this app owns. Lets us
     // detect "DB says subscribed but Twitch lost it" and the inverse (zombies).
-    let remoteSubs: { id: string; type: string; status: string; condition: Record<string, string> }[] = [];
+    let remoteSubs: { id: string; type: string; status: string; condition: Record<string, string>; transport: { method: string; callback?: string } }[] = [];
     let remoteError: string | null = null;
-    if (ws.configured) {
+    if (transport.configured) {
       try {
         const rs = await this.helix.listEventSubSubscriptions();
         remoteSubs = rs.map((r) => ({
@@ -198,6 +198,7 @@ export class TwitchController {
           type: r.type,
           status: r.status,
           condition: r.condition,
+          transport: { method: r.transport.method, callback: r.transport.callback },
         }));
       } catch (e) {
         remoteError = (e as Error).message;
@@ -210,7 +211,7 @@ export class TwitchController {
     const me = guild?.members.me ?? null;
 
     const subscriptionsReport = await Promise.all(
-      subs.map(async (s) => {
+      subRows.map(async (s) => {
         const platformRows = await this.platformSubRepo.find({
           where: { streamSubscriptionId: s.id },
         });
@@ -263,9 +264,11 @@ export class TwitchController {
 
     return {
       env: {
-        twitchConfigured: ws.configured,
+        twitchConfigured: transport.configured,
+        webhookConfigured: transport.webhookConfigured,
+        callbackUrl: transport.callbackUrl,
       },
-      ws,
+      transport,
       guild: guild ? { id: guild.id, name: guild.name, botPresent: Boolean(me) } : { error: 'Bot is not on this guild' },
       remoteSubsTotal: remoteSubs.length,
       remoteError,

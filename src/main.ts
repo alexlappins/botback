@@ -1,5 +1,6 @@
 import { mkdirSync } from 'fs';
 import { join } from 'path';
+import express from 'express';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
@@ -9,8 +10,23 @@ async function bootstrap() {
   const uploadsPath = join(process.cwd(), 'uploads');
   mkdirSync(uploadsPath, { recursive: true });
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Capture the raw bytes for the Twitch webhook BEFORE Nest's default JSON
+  // body parsing eats them — HMAC verification requires the original buffer,
+  // not a re-stringified JSON. Everything else keeps the normal JSON parser.
+  // bodyParser is also disabled below so we don't double-parse on other routes.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   app.useStaticAssets(uploadsPath, { prefix: '/uploads/' });
+
+  // Twitch webhook: raw bytes go through, parsed JSON attached as req.body.
+  app.use(
+    '/api/twitch/webhook',
+    express.raw({ type: '*/*', limit: '1mb' }),
+  );
+  // Everything else: standard JSON + urlencoded.
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
   const secret = process.env.SESSION_SECRET || 'change-me-in-production';
   app.use(

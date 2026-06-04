@@ -95,18 +95,34 @@ export class TwitchHelixService {
     return all;
   }
 
-  /** Create an EventSub subscription via WebSocket transport. */
-  async createWsSubscription(args: {
+  /**
+   * Create an EventSub subscription via Webhook transport.
+   *
+   * Twitch will immediately hit `callback` with a challenge handshake; the
+   * subscription stays in `webhook_callback_verification_pending` until we
+   * answer 200 + plaintext challenge. Only then does it flip to `enabled`
+   * and start delivering events.
+   *
+   * Note: app access token + webhook is the only legal Twitch combo here —
+   * websocket transport requires per-broadcaster user tokens, which would
+   * mean every streamer OAuthing the bot. Not what we want.
+   */
+  async createWebhookSubscription(args: {
     type: string;
     version: string;
     condition: Record<string, string>;
-    sessionId: string;
+    callback: string;
+    secret: string;
   }): Promise<EventSubSubscription> {
     const body = {
       type: args.type,
       version: args.version,
       condition: args.condition,
-      transport: { method: 'websocket', session_id: args.sessionId },
+      transport: {
+        method: 'webhook',
+        callback: args.callback,
+        secret: args.secret,
+      },
     };
     const data = await this.callJson<{ data: EventSubSubscription[] }>(
       `${this.base}/eventsub/subscriptions`,

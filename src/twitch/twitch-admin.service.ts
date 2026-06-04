@@ -4,8 +4,8 @@ import { Repository } from 'typeorm';
 
 import { FeatureFlagsService } from '../common/feature-flags/feature-flags.service';
 import { StreamSubscription } from './entities/stream-subscription.entity';
-import { TwitchEventSubService } from './twitch-eventsub.service';
 import { TwitchHelixService } from './twitch-helix.service';
+import { TwitchSubscriptionManagerService } from './twitch-subscription-manager.service';
 
 export interface AddResult {
   ok: true;
@@ -37,7 +37,7 @@ export class TwitchAdminService {
     @InjectRepository(StreamSubscription)
     private readonly streamRepo: Repository<StreamSubscription>,
     private readonly helix: TwitchHelixService,
-    private readonly eventSub: TwitchEventSubService,
+    private readonly subs: TwitchSubscriptionManagerService,
     private readonly featureFlags: FeatureFlagsService,
   ) {}
 
@@ -113,7 +113,7 @@ export class TwitchAdminService {
     const saved = await this.streamRepo.save(row);
 
     try {
-      await this.eventSub.ensureSubscriptionsFor(saved);
+      await this.subs.ensureSubscriptionsFor(saved);
     } catch (e) {
       // Roll back the DB insert so the admin doesn't end up with a row
       // that has no EventSub backing. Bootstrap will retry creation on the
@@ -144,7 +144,7 @@ export class TwitchAdminService {
     const row = await this.streamRepo.findOne({ where: { id: subscriptionId, guildId } });
     if (!row) return false;
     try {
-      await this.eventSub.removeSubscriptionsFor(row.id);
+      await this.subs.removeSubscriptionsFor(row.id);
     } catch (e) {
       this.logger.warn(`Cleanup of EventSub for ${row.platformUsername} failed: ${(e as Error).message}`);
       // Continue: removing the DB row is the user's intent. Stranger Twitch

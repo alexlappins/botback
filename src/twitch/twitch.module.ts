@@ -10,17 +10,21 @@ import { StreamNotificationsService } from './stream-notifications.service';
 import { TwitchAdminService } from './twitch-admin.service';
 import { TwitchCommands } from './twitch.commands';
 import { TwitchController } from './twitch.controller';
-import { TwitchEventSubService } from './twitch-eventsub.service';
 import { TwitchHelixService } from './twitch-helix.service';
+import { TwitchSubscriptionManagerService } from './twitch-subscription-manager.service';
 import { TwitchTokenService } from './twitch-token.service';
+import { TwitchWebhookController } from './twitch-webhook.controller';
 
 /**
  * Twitch (and future YouTube/Kick/TikTok) live-stream notifications module.
  *
- * Wires up the WS client + Helix REST + DB-backed notifier + admin service +
- * /twitch slash commands. If TWITCH_CLIENT_ID/SECRET aren't set the module
- * still loads, but TwitchTokenService.isConfigured() returns false and the
- * WS service refuses to connect — admin actions surface a clear error.
+ * Webhook-based EventSub:
+ *   - TwitchWebhookController receives events at /api/twitch/webhook
+ *   - TwitchSubscriptionManagerService owns creation / reconciliation
+ *   - StreamNotificationsService renders + ships the Discord embed
+ *
+ * If TWITCH_CLIENT_ID/SECRET aren't set the module still loads but stays
+ * passive — admin actions surface a clear "not configured" error.
  */
 @Module({
   imports: [
@@ -31,11 +35,11 @@ import { TwitchTokenService } from './twitch-token.service';
     // (it doesn't today); harmless when there's no cycle yet.
     forwardRef(() => DashboardModule),
   ],
-  controllers: [TwitchController],
+  controllers: [TwitchController, TwitchWebhookController],
   providers: [
     TwitchTokenService,
     TwitchHelixService,
-    TwitchEventSubService,
+    TwitchSubscriptionManagerService,
     StreamNotificationsService,
     TwitchAdminService,
     TwitchCommands,
