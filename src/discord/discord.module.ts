@@ -25,6 +25,11 @@ import { DiscordUpdate } from './discord.update';
           // Нужен для счётчика "В сети" в ServerStats. Privileged — включить в Dev Portal:
           // https://discord.com/developers/applications/<APP_ID>/bot → Privileged Gateway Intents
           GatewayIntentBits.GuildPresences,
+          // Voice-XP в Leveling работает только с этим интентом — без него
+          // discord.js не получает кто в голосовых каналах, voiceCh.members
+          // всегда пустой, и voiceStateUpdate ивент не приходит. Non-privileged,
+          // активация в Dev Portal не нужна.
+          GatewayIntentBits.GuildVoiceStates,
         ],
         partials: [Partials.Message, Partials.Reaction],
         development: config.get<string>('DISCORD_GUILD_ID')

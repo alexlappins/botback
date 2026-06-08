@@ -4,7 +4,11 @@
       "Bash(echo \"BUILD $?\")",
       "Bash(node -e ' *)",
       "Bash(ls -la '/Users/aleksej/Downloads/Telegram Desktop/' 2>/dev/null | grep -i \"levelup\\\\|html\" | head -10)",
-      "Read(//Users/aleksej/Downloads/Telegram Desktop/**)"
+      "Read(//Users/aleksej/Downloads/Telegram Desktop/**)",
+      "Bash(grep -E \"'.*[А-Яа-я]|\\\\\".*[А-Яа-я]|\\\\`.*[А-Яа-я]\")",
+      "Bash(grep -E \"['\\\\\"\\\\`>][^'\\\\\"\\\\`<]*[А-Яа-я]\")",
+      "Bash(xargs '-I{}' sh -c 'cnt=$\\(grep -cP \"[А-Яа-я]\" \"{}\"\\); echo \"$cnt {}\"')",
+      "Bash(grep -E \"'[^']*[А-Яа-я]|\\\\\"[^\\\\\"]*[А-Яа-я]|\\\\`[^\\\\`]*[А-Яа-я]\")"
     ],
     "additionalDirectories": [
       "/Users/aleksej/Desktop/botfront"

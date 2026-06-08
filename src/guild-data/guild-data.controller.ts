@@ -16,7 +16,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { Request } from 'express';
 import { Inject } from '@nestjs/common';
-import { Client, TextChannel, MessageReaction } from 'discord.js';
+import { Client, PermissionFlagsBits, TextChannel, MessageReaction } from 'discord.js';
 
 import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
@@ -246,30 +246,61 @@ export class GuildDataController {
     await this.ensureGuildAccess(guildId, req);
     const channelId = body?.discordChannelId?.trim();
     const messageId = body?.discordMessageId?.trim();
-    const emojiKey = body?.emojiKey?.trim();
+    const rawEmoji = body?.emojiKey?.trim();
     const roleId = body?.discordRoleId?.trim();
-    if (!channelId || !messageId || !emojiKey || !roleId) {
+    if (!channelId || !messageId || !rawEmoji || !roleId) {
       throw new BadRequestException('All fields required');
     }
-    // Persist binding in storage so the reaction listener can act
+
+    // Normalise the emoji to the form discord.js gives us in
+    // messageReactionAdd events. Without this, custom-emoji bindings save
+    // as "<:name:123>" but the event payload is just "123" → no role on
+    // reaction. Unicode emoji pass through unchanged.
+    const emojiKey = normaliseEmojiKey(rawEmoji);
+
+    // Resolve guild + channel + message BEFORE writing storage. If anything's
+    // wrong (missing perms / bad emoji / message gone) we want the dashboard
+    // to surface the real error, not silently save a dead binding.
+    const guild =
+      this.client.guilds.cache.get(guildId) ??
+      (await this.client.guilds.fetch(guildId).catch(() => null));
+    if (!guild) {
+      throw new BadRequestException('Server not found or bot is not on it');
+    }
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel || !channel.isTextBased()) {
+      throw new BadRequestException('Channel not found or not a text channel');
+    }
+    const me = guild.members.me;
+    if (me) {
+      const perms = channel.permissionsFor(me);
+      const missing: string[] = [];
+      if (!perms?.has(PermissionFlagsBits.ReadMessageHistory)) missing.push('Read Message History');
+      if (!perms?.has(PermissionFlagsBits.AddReactions)) missing.push('Add Reactions');
+      if (missing.length) {
+        throw new BadRequestException(
+          `Bot is missing channel permissions: ${missing.join(', ')}. Grant them and retry.`,
+        );
+      }
+    }
+    const discordMsg = await (channel as TextChannel).messages
+      .fetch(messageId)
+      .catch(() => null);
+    if (!discordMsg) {
+      throw new BadRequestException('Message not found in that channel');
+    }
+    try {
+      await discordMsg.react(rawEmoji);
+    } catch (e) {
+      throw new BadRequestException(
+        `Couldn't react with that emoji: ${(e as Error).message}. ` +
+          'For custom emojis use the format <:name:id>; for unicode just paste the character.',
+      );
+    }
+
+    // Reaction landed — now it's safe to persist the binding.
     this.storage.setReactionRoleBinding(guildId, messageId, emojiKey, roleId);
     this.storage.setReactionRoleChannel(guildId, messageId, channelId);
-
-    // Place the reaction on the message so users can see it
-    try {
-      const guild =
-        this.client.guilds.cache.get(guildId) ??
-        (await this.client.guilds.fetch(guildId).catch(() => null));
-      const channel = guild?.channels.cache.get(channelId);
-      if (channel?.isTextBased()) {
-        const discordMsg = await (channel as TextChannel).messages
-          .fetch(messageId)
-          .catch(() => null);
-        await discordMsg?.react(emojiKey).catch(() => null);
-      }
-    } catch {
-      // ignore — binding is saved; reaction can be added manually
-    }
 
     const row = this.reactionRepo.create({
       guildId,
@@ -364,4 +395,26 @@ function parseJsonbArray(v: unknown): unknown[] | null {
     }
   }
   return null;
+}
+
+/**
+ * Convert an admin-typed emoji into the canonical key the reaction listener
+ * compares against:
+ *   - "<:name:123>"    → "123"  (custom emoji — discord.js gives us the id)
+ *   - "<a:name:123>"   → "123"  (animated custom — same)
+ *   - "name:123"       → "123"
+ *   - "😀" / unicode    → "😀"   (unicode passes through)
+ *
+ * Matches `getEmojiKey(reaction)` in reaction-roles.components.ts, which
+ * reads `reaction.emoji.id ?? reaction.emoji.name`.
+ */
+function normaliseEmojiKey(input: string): string {
+  const trimmed = input.trim();
+  const customMatch = trimmed.match(/^<a?:[^:]+:(\d+)>$/);
+  if (customMatch) return customMatch[1];
+  if (trimmed.includes(':')) {
+    const tail = trimmed.split(':').pop();
+    if (tail && /^\d+$/.test(tail)) return tail;
+  }
+  return trimmed;
 }

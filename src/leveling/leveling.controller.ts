@@ -539,7 +539,7 @@ export class LevelingController {
     if (!png) throw new BadRequestException('Failed to render rank card');
 
     await channel.send({
-      content: `Тестовая карта ранга для <@${member.id}>`,
+      content: `Test rank card for <@${member.id}>`,
       files: [{ attachment: png, name: `rank-${member.id}.png` }],
     });
     return { ok: true };

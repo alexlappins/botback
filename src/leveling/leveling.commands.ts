@@ -215,8 +215,8 @@ async function renderLeaderboard(
     return {
       content:
         scope === 'monthly'
-          ? 'Никого нет в monthly-лидерборде. Поактивничайте чуть-чуть!'
-          : 'Лидерборд пуст — пока никто не накапливал XP.',
+          ? 'No one is on the monthly leaderboard yet — chat in a bit to earn the first XP!'
+          : 'Leaderboard is empty — nobody has earned XP yet.',
       embeds: [],
       components: [buildLeaderboardRow(scope, page, totalPages)],
     };
@@ -247,25 +247,43 @@ function buildLeaderboardRow(
   page: number,
   totalPages: number,
 ): ActionRowBuilder<ButtonBuilder> {
-  const prev = new ButtonBuilder()
-    .setCustomId(`${LB_PREFIX}/${scope}/${Math.max(1, page - 1)}`)
-    .setLabel('◀')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(page <= 1);
-
+  const row = new ActionRowBuilder<ButtonBuilder>();
   const toggleScope: 'all' | 'monthly' = scope === 'monthly' ? 'all' : 'monthly';
-  const toggle = new ButtonBuilder()
-    .setCustomId(`${LB_PREFIX}/${toggleScope}/1`)
-    .setLabel(scope === 'monthly' ? 'All-time' : 'Monthly')
-    .setStyle(ButtonStyle.Primary);
 
-  const next = new ButtonBuilder()
-    .setCustomId(`${LB_PREFIX}/${scope}/${Math.min(totalPages, page + 1)}`)
-    .setLabel('▶')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(page >= totalPages);
+  // Prev/Next encode the destination page in their customId. When totalPages
+  // is 1 both destinations clamp to page 1, producing the SAME customId — and
+  // Discord refuses to render messages with duplicate component custom_ids
+  // (even disabled ones), which crashes editReply() and leaves the deferred
+  // interaction spinning forever. Only emit pager buttons when there's more
+  // than one page; the scope toggle always shows.
+  if (totalPages > 1) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${LB_PREFIX}/${scope}/${Math.max(1, page - 1)}`)
+        .setLabel('◀')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page <= 1),
+    );
+  }
 
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(prev, toggle, next);
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`${LB_PREFIX}/${toggleScope}/1`)
+      .setLabel(scope === 'monthly' ? 'All-time' : 'Monthly')
+      .setStyle(ButtonStyle.Primary),
+  );
+
+  if (totalPages > 1) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${LB_PREFIX}/${scope}/${Math.min(totalPages, page + 1)}`)
+        .setLabel('▶')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages),
+    );
+  }
+
+  return row;
 }
 
 // ── /xp <subcommands> (moderators) ──────────────────────
@@ -273,7 +291,10 @@ function buildLeaderboardRow(
 const XpGroup = createCommandGroupDecorator({
   name: 'xp',
   description: 'Manage XP (moderators only)',
-  defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+  // ManageMessages covers both admins (who inherit all perms) and moderator
+  // roles, which typically explicitly have it. ManageGuild was admin-only and
+  // shut mods out — per spec they should be able to /xp give and friends.
+  defaultMemberPermissions: PermissionFlagsBits.ManageMessages,
 });
 
 @XpGroup()
@@ -305,7 +326,7 @@ export class XpAdminCommands {
       if (member) await this.leveling.handleLevelUp(interaction.guild, member, result);
     }
     return interaction.editReply(
-      `Выдано **${dto.amount} XP** пользователю <@${dto.user.id}>. Теперь: ${result.newTotal} XP, level ${result.newLevel}.`,
+      `Granted **${dto.amount} XP** to <@${dto.user.id}>. Now: ${result.newTotal} XP, level ${result.newLevel}.`,
     );
   }
 
@@ -328,7 +349,7 @@ export class XpAdminCommands {
     const settings = await this.leveling.getSettings(interaction.guildId);
     if (member) await this.leveling.applyRoleRewards(member, settings.roleRewardsMode);
     return interaction.editReply(
-      `Снято **${dto.amount} XP** у <@${dto.user.id}>. Теперь: ${result.newTotal} XP, level ${result.newLevel}.`,
+      `Removed **${dto.amount} XP** from <@${dto.user.id}>. Now: ${result.newTotal} XP, level ${result.newLevel}.`,
     );
   }
 
@@ -355,7 +376,7 @@ export class XpAdminCommands {
       await this.leveling.applyRoleRewards(member, settings.roleRewardsMode);
     }
     return interaction.editReply(
-      `XP пользователя <@${dto.user.id}> установлен в **${dto.amount}** (level ${result.newLevel}).`,
+      `XP of <@${dto.user.id}> set to **${dto.amount}** (level ${result.newLevel}).`,
     );
   }
 
@@ -368,13 +389,13 @@ export class XpAdminCommands {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
     if (!dto.user) {
-      return interaction.reply({ content: 'Укажи пользователя для сброса.', ephemeral: true });
+      return interaction.reply({ content: 'Specify a user to reset.', ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
     const member = await interaction.guild.members.fetch(dto.user.id).catch(() => null);
     if (member) await this.leveling.stripAllRewardRoles(member);
     await this.leveling.resetUser(interaction.guildId, dto.user.id);
-    return interaction.editReply(`XP пользователя <@${dto.user.id}> сброшен в 0.`);
+    return interaction.editReply(`XP of <@${dto.user.id}> reset to 0.`);
   }
 
   @Subcommand({ name: 'ignore', description: 'Add/remove a user from the XP ignore list' })
@@ -397,10 +418,10 @@ export class XpAdminCommands {
       } catch {
         // unique conflict — already ignored
       }
-      return interaction.editReply(`<@${dto.user.id}> добавлен в ignore-list (XP не начисляется).`);
+      return interaction.editReply(`<@${dto.user.id}> added to the ignore list (no XP will be awarded).`);
     }
     await this.ignoredRepo.delete({ serverId: interaction.guildId, discordId: dto.user.id });
-    return interaction.editReply(`<@${dto.user.id}> убран из ignore-list.`);
+    return interaction.editReply(`<@${dto.user.id}> removed from the ignore list.`);
   }
 
   @Subcommand({ name: 'recalc', description: 'Recompute levels and tiers for all members' })
@@ -410,7 +431,7 @@ export class XpAdminCommands {
     }
     await interaction.deferReply({ ephemeral: true });
     const { updated } = await this.leveling.recalcServer(interaction.guildId);
-    return interaction.editReply(`Пересчёт выполнен. Обновлено записей: **${updated}**.`);
+    return interaction.editReply(`Recalculation done. Records updated: **${updated}**.`);
   }
 }
 

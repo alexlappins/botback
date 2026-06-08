@@ -25,7 +25,7 @@ export class ServerLevelingSettings {
   @Column({ name: 'levelup_channel_id', type: 'varchar', length: 32, nullable: true })
   levelupChannelId: string | null;
 
-  @Column({ name: 'levelup_message_template', type: 'text', default: 'GG {user}! Ты достиг уровня {level}!' })
+  @Column({ name: 'levelup_message_template', type: 'text', default: 'GG {user}! You hit level {level}!' })
   levelupMessageTemplate: string;
 
   @Column({ name: 'notify_only_new_tier', type: 'boolean', default: false })
