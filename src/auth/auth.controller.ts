@@ -20,6 +20,11 @@ export class AuthController {
   discordCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:5173');
     const session = req.session as { save: (cb: (err?: Error) => void) => void };
+    // After OAuth: send admins straight to template management, regular
+    // users straight to message templates (the shop is hidden until launch,
+    // so landing on the public root would just show the marketing page).
+    const user = req.user as SessionUser | undefined;
+    const landingPath = user?.role === 'admin' ? '/server-templates' : '/server-messages';
 
     req.logIn(req.user as Express.User, (loginErr) => {
       if (loginErr) {
@@ -33,7 +38,7 @@ export class AuthController {
           return res.status(500).json({ error: 'Session save failed' });
         }
 
-        return res.redirect(frontendUrl);
+        return res.redirect(`${frontendUrl}${landingPath}`);
       });
     });
   }

@@ -25,7 +25,51 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LevelingService } from './leveling.service';
+import {
+  LevelingPermissionsService,
+  type LevelingCommandKey,
+} from './leveling-permissions.service';
 import { IgnoredUser } from './entities/ignored-user.entity';
+
+/**
+ * Code-level gate for a leveling command. Returns true if the interaction
+ * was rejected (handler must `return`). Uses an ephemeral reply or follow-up
+ * depending on whether the handler has already deferred — we test
+ * `interaction.deferred` so we don't double-reply.
+ */
+async function guardLevelingCommand(
+  interaction: ChatInputCommandInteraction,
+  command: LevelingCommandKey,
+  permissions: LevelingPermissionsService,
+): Promise<boolean> {
+  if (!interaction.guildId) return false;
+  const member = interaction.member;
+  // Discord caches the resolved member only when the interaction was
+  // dispatched inside a guild — defensive null/array handling.
+  if (!member) return false;
+  const roleIds: Iterable<string> =
+    Array.isArray((member as { roles?: unknown }).roles)
+      ? ((member as { roles: string[] }).roles)
+      : 'cache' in (member as { roles: { cache: { keys: () => IterableIterator<string> } } }).roles
+        ? (member as { roles: { cache: { keys: () => IterableIterator<string> } } }).roles.cache.keys()
+        : [];
+  const perms = (interaction.memberPermissions ?? null);
+  const hasManageMessages = !!perms?.has(PermissionFlagsBits.ManageMessages);
+  const ok = await permissions.canUse(
+    interaction.guildId,
+    command,
+    roleIds,
+    hasManageMessages,
+  );
+  if (ok) return false;
+  const text = 'You do not have permission to use this command on this server.';
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply({ content: text });
+  } else {
+    await interaction.reply({ content: text, ephemeral: true });
+  }
+  return true;
+}
 
 /** Leaderboard button custom-id prefix: `lvlb/<scope>/<page>`. */
 const LB_PREFIX = 'lvlb';
@@ -97,7 +141,10 @@ class LeaderboardDto {
 
 @Injectable()
 export class LevelingPublicCommands {
-  constructor(private readonly leveling: LevelingService) {}
+  constructor(
+    private readonly leveling: LevelingService,
+    private readonly permissions: LevelingPermissionsService,
+  ) {}
 
   @SlashCommand({ name: 'rank', description: 'Show your (or another user’s) rank' })
   async onRank(
@@ -107,6 +154,7 @@ export class LevelingPublicCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'rank', this.permissions)) return;
     await interaction.deferReply();
 
     const targetId = dto.user?.id ?? interaction.user.id;
@@ -152,6 +200,7 @@ export class LevelingPublicCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'leaderboard', this.permissions)) return;
     await interaction.deferReply();
     const scope: 'all' | 'monthly' = dto.scope === 1 ? 'monthly' : 'all';
     const page = Math.max(1, Math.min(LB_MAX_PAGE, dto.page ?? 1));
@@ -290,11 +339,11 @@ function buildLeaderboardRow(
 
 const XpGroup = createCommandGroupDecorator({
   name: 'xp',
-  description: 'Manage XP (moderators only)',
-  // ManageMessages covers both admins (who inherit all perms) and moderator
-  // roles, which typically explicitly have it. ManageGuild was admin-only and
-  // shut mods out — per spec they should be able to /xp give and friends.
-  defaultMemberPermissions: PermissionFlagsBits.ManageMessages,
+  description: 'Manage XP',
+  // No Discord-side default perm: the bot enforces access via
+  // LevelingPermissionsService in each handler. Keeping ManageMessages here
+  // would hide the commands from any custom role a server admin wants to grant
+  // (e.g. "Helper"), defeating the per-role override feature in the dashboard.
 });
 
 @XpGroup()
@@ -302,6 +351,7 @@ const XpGroup = createCommandGroupDecorator({
 export class XpAdminCommands {
   constructor(
     private readonly leveling: LevelingService,
+    private readonly permissions: LevelingPermissionsService,
     @InjectRepository(IgnoredUser)
     private readonly ignoredRepo: Repository<IgnoredUser>,
   ) {}
@@ -314,6 +364,7 @@ export class XpAdminCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.give', this.permissions)) return;
     await interaction.deferReply({ ephemeral: true });
     const result = await this.leveling.awardXp(
       interaction.guildId,
@@ -338,6 +389,7 @@ export class XpAdminCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.remove', this.permissions)) return;
     await interaction.deferReply({ ephemeral: true });
     const result = await this.leveling.awardXp(
       interaction.guildId,
@@ -361,6 +413,7 @@ export class XpAdminCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.set', this.permissions)) return;
     await interaction.deferReply({ ephemeral: true });
     const row = await this.leveling.getOrCreateXp(interaction.guildId, dto.user.id);
     const delta = dto.amount - Number(row.totalXp);
@@ -388,6 +441,7 @@ export class XpAdminCommands {
     if (!interaction.guildId || !interaction.guild) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.reset', this.permissions)) return;
     if (!dto.user) {
       return interaction.reply({ content: 'Specify a user to reset.', ephemeral: true });
     }
@@ -406,6 +460,7 @@ export class XpAdminCommands {
     if (!interaction.guildId) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.ignore', this.permissions)) return;
     await interaction.deferReply({ ephemeral: true });
     const action = dto.action ?? 1;
     if (action === 1) {
@@ -429,6 +484,7 @@ export class XpAdminCommands {
     if (!interaction.guildId) {
       return interaction.reply({ content: 'Server only.', ephemeral: true });
     }
+    if (await guardLevelingCommand(interaction, 'xp.recalc', this.permissions)) return;
     await interaction.deferReply({ ephemeral: true });
     const { updated } = await this.leveling.recalcServer(interaction.guildId);
     return interaction.editReply(`Recalculation done. Records updated: **${updated}**.`);

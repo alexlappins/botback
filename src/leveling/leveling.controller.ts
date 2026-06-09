@@ -34,6 +34,12 @@ import { ServerLevelingSettings } from './entities/server-leveling-settings.enti
 import { ServerTier } from './entities/server-tier.entity';
 import { UserXp } from './entities/user-xp.entity';
 import { XpEventLog } from './entities/xp-event-log.entity';
+import {
+  LEVELING_COMMANDS,
+  LevelingPermissionsService,
+  type LevelingCommandKey,
+  type PermMode,
+} from './leveling-permissions.service';
 import { LevelingService } from './leveling.service';
 import { RankCardCacheService } from './rank-card-cache.service';
 import {
@@ -78,6 +84,7 @@ export class LevelingController {
     private readonly eventLogRepo: Repository<XpEventLog>,
     private readonly rankCardRenderer: RankCardRendererService,
     private readonly rankCardCache: RankCardCacheService,
+    private readonly permissions: LevelingPermissionsService,
   ) {}
 
   private async ensureAccess(guildId: string, req: Request): Promise<void> {
@@ -543,6 +550,44 @@ export class LevelingController {
       files: [{ attachment: png, name: `rank-${member.id}.png` }],
     });
     return { ok: true };
+  }
+
+  // ── Per-command permissions (Misha TZ pt.2 §6) ────────
+  //
+  // Returns one row per known leveling command, even when the guild has no
+  // override row yet — defaults from LEVELING_COMMANDS fill in. Includes the
+  // full canonical list under `commands` so the dashboard can render the UI
+  // without having to know command keys ahead of time.
+
+  @Get('permissions')
+  async getPermissions(@Param('guildId') guildId: string, @Req() req: Request) {
+    await this.ensureAccess(guildId, req);
+    return {
+      commands: LEVELING_COMMANDS,
+      permissions: await this.permissions.listForGuild(guildId),
+    };
+  }
+
+  @Put('permissions/:command')
+  async setPermission(
+    @Param('guildId') guildId: string,
+    @Param('command') command: string,
+    @Body() body: { mode: PermMode; allowedRoleIds?: string[] },
+    @Req() req: Request,
+  ) {
+    await this.ensureAccess(guildId, req);
+    if (!LEVELING_COMMANDS.some((c) => c.command === command)) {
+      throw new BadRequestException(`Unknown leveling command: ${command}`);
+    }
+    if (!body?.mode || !['everyone', 'admins', 'roles'].includes(body.mode)) {
+      throw new BadRequestException('mode must be "everyone", "admins" or "roles"');
+    }
+    return this.permissions.setForCommand(
+      guildId,
+      command as LevelingCommandKey,
+      body.mode,
+      Array.isArray(body.allowedRoleIds) ? body.allowedRoleIds : [],
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────

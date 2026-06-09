@@ -6,6 +6,7 @@ import { FeatureFlagsModule } from '../common/feature-flags/feature-flags.module
 import { ServerTemplate } from '../server-templates/entities/server-template.entity';
 
 import { IgnoredUser } from './entities/ignored-user.entity';
+import { LevelingCommandPermission } from './entities/leveling-command-permission.entity';
 import { NoXpChannel } from './entities/no-xp-channel.entity';
 import { NoXpRole } from './entities/no-xp-role.entity';
 import { RoleReward } from './entities/role-reward.entity';
@@ -20,6 +21,7 @@ import { UserXp } from './entities/user-xp.entity';
 import { XpEventLog } from './entities/xp-event-log.entity';
 
 import { AvatarCacheService } from './avatar-cache.service';
+import { LevelingPermissionsService } from './leveling-permissions.service';
 import { LevelingService } from './leveling.service';
 import { LevelingController } from './leveling.controller';
 import { LevelingListeners } from './leveling.listeners';
@@ -53,6 +55,7 @@ import { VoiceTickService } from './voice-tick.service';
       NoXpChannel,
       IgnoredUser,
       XpEventLog,
+      LevelingCommandPermission,
       // Template-side mirrors — owned by the leveling domain so the deploy
       // service can read them with @InjectRepository. Exposed via TypeOrmModule
       // export below so the server-templates module can wire its REST endpoints.
@@ -76,6 +79,7 @@ import { VoiceTickService } from './voice-tick.service';
   controllers: [LevelingController, TemplateLevelingAdminController],
   providers: [
     LevelingService,
+    LevelingPermissionsService,
     LevelingListeners,
     VoiceTickService,
     LevelingPublicCommands,
@@ -86,6 +90,6 @@ import { VoiceTickService } from './voice-tick.service';
     RankCardRendererService,
     RankCardCacheService,
   ],
-  exports: [LevelingService, TemplateLevelingDeployService],
+  exports: [LevelingService, LevelingPermissionsService, TemplateLevelingDeployService],
 })
 export class LevelingModule {}

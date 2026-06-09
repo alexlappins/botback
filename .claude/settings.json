@@ -8,10 +8,12 @@
       "Bash(grep -E \"'.*[А-Яа-я]|\\\\\".*[А-Яа-я]|\\\\`.*[А-Яа-я]\")",
       "Bash(grep -E \"['\\\\\"\\\\`>][^'\\\\\"\\\\`<]*[А-Яа-я]\")",
       "Bash(xargs '-I{}' sh -c 'cnt=$\\(grep -cP \"[А-Яа-я]\" \"{}\"\\); echo \"$cnt {}\"')",
-      "Bash(grep -E \"'[^']*[А-Яа-я]|\\\\\"[^\\\\\"]*[А-Яа-я]|\\\\`[^\\\\`]*[А-Яа-я]\")"
+      "Bash(grep -E \"'[^']*[А-Яа-я]|\\\\\"[^\\\\\"]*[А-Яа-я]|\\\\`[^\\\\`]*[А-Яа-я]\")",
+      "Bash(grep -rnE 'customId:|customId\\\\s*=\\\\s*[\\\\\\\\\"\\\\\\\\\\\\']|>\\\\s*customId' /Users/aleksej/Desktop/botfront/src/ 2>&1 | head)"
     ],
     "additionalDirectories": [
-      "/Users/aleksej/Desktop/botfront"
+      "/Users/aleksej/Desktop/botfront",
+      "/Users/aleksej/Desktop/bot/s*customId /Users/aleksej/Desktop/botfront/src"
     ]
   }
 }
