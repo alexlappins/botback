@@ -165,7 +165,7 @@ export class StoreService {
       .createQueryBuilder('st')
       .select('tg.tag', 'tag')
       .addSelect('COUNT(*)::int', 'count')
-      .from((sub) => sub.from(StoreTemplate, 's').select('unnest(s.tags)', 'tag').where('s.is_active = true'), 'tg')
+      .from((sub) => sub.from(StoreTemplate, 's').select('unnest(s.tags)', 'tag').where('s.isActive = true'), 'tg')
       .groupBy('tg.tag')
       .orderBy('count', 'DESC')
       .limit(50)

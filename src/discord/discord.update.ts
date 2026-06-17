@@ -59,6 +59,11 @@ export class DiscordUpdate {
 
   @On('error')
   onError(@Context() [error]: ContextOf<'error'>) {
-    this.logger.error(error);
+    // Log the stack, not just the message. A bare `DiscordAPIError[50001]:
+    // Missing Access` is undiagnosable — the stack tells us which operation
+    // (which channel/message/role) the bot was denied, which is almost always
+    // a per-channel permission the bot is missing (View Channel / Send
+    // Messages / Manage Roles) rather than a code fault.
+    this.logger.error(error instanceof Error ? (error.stack ?? error.message) : error);
   }
 }
