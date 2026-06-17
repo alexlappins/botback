@@ -107,11 +107,12 @@ export class GuildDataController {
       throw new BadRequestException('Selected channel is not a text channel');
     }
 
+    const safeEmbed = sanitizeEmbedForDiscord(embedJson);
     let sent;
     try {
       sent = await (channel as TextChannel).send({
         content: content ?? undefined,
-        embeds: (embedJson ? [embedJson] : []) as never,
+        embeds: (safeEmbed ? [safeEmbed] : []) as never,
         components: (componentsJson ?? []) as never,
       });
     } catch (e) {
@@ -169,7 +170,8 @@ export class GuildDataController {
             .catch(() => null);
           if (discordMsg) {
             const content = msg.content?.trim() || undefined;
-            const embeds = msg.embedJson ? [msg.embedJson] : [];
+            const safeEmbed = sanitizeEmbedForDiscord(msg.embedJson);
+            const embeds = safeEmbed ? [safeEmbed] : [];
             const components = msg.componentsJson ?? [];
             await discordMsg.edit({
               content: content ?? '',
@@ -379,6 +381,44 @@ function parseJsonbObject(v: unknown): Record<string, unknown> | null {
     }
   }
   return null;
+}
+
+/**
+ * Discord rejects embeds whose `description`/`title` keys are present but
+ * empty (`BASE_TYPE_REQUIRED`), and embeds with no renderable content at all.
+ * Stored embeds can end up shaped like `{description: ""}` — e.g. a template
+ * message whose embed was left blank, or a text/buttons-only message that
+ * nonetheless persisted an empty embed object. Without this, adding buttons to
+ * such a message (which re-edits the Discord message with the stored embed)
+ * 400s on `embeds[0].description[BASE_TYPE_REQUIRED]`.
+ *
+ * Strips blank scalar fields, drops sub-objects missing their required key
+ * (footer.text / author.name / image|thumbnail.url), and returns null when no
+ * renderable content remains so the caller can omit the embed entirely.
+ */
+function sanitizeEmbedForDiscord(
+  embed: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!embed || typeof embed !== 'object') return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(embed)) {
+    if (v == null) continue;
+    if (typeof v === 'string' && v.trim() === '') continue; // description: "", title: "", url: ""
+    if (Array.isArray(v) && v.length === 0) continue; // fields: []
+    out[k] = v;
+  }
+  const text = (o: unknown, key: string): string | undefined => {
+    const val = (o as Record<string, unknown>)?.[key];
+    return typeof val === 'string' ? val.trim() : undefined;
+  };
+  if ('footer' in out && !text(out.footer, 'text')) delete out.footer;
+  if ('author' in out && !text(out.author, 'name')) delete out.author;
+  for (const imgKey of ['image', 'thumbnail'] as const) {
+    if (imgKey in out && !text(out[imgKey], 'url')) delete out[imgKey];
+  }
+  const renderable = ['title', 'description', 'fields', 'image', 'thumbnail', 'author', 'footer'];
+  if (!renderable.some((k) => k in out)) return null;
+  return out;
 }
 
 function parseJsonbArray(v: unknown): unknown[] | null {

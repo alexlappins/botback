@@ -13,7 +13,13 @@ export interface AddResult {
 }
 export interface AddError {
   ok: false;
-  reason: 'limit_reached' | 'not_found' | 'duplicate' | 'invalid_username';
+  reason:
+    | 'limit_reached'
+    | 'not_found'
+    | 'duplicate'
+    | 'invalid_username'
+    | 'not_configured'
+    | 'subscription_failed';
   message: string;
 }
 
@@ -70,6 +76,19 @@ export class TwitchAdminService {
       };
     }
 
+    // Webhook transport needs a public HTTPS callback + secret. Without them
+    // ensureSubscriptionsFor() silently no-ops and the channel would be saved
+    // with no EventSub backing (notifications never arrive). Fail fast with an
+    // actionable message instead of a misleading "added".
+    if (!this.subs.webhookConfigured()) {
+      return {
+        ok: false,
+        reason: 'not_configured',
+        message:
+          'Twitch notifications are not configured on the bot — set TWITCH_WEBHOOK_CALLBACK_URL (a public HTTPS URL) and TWITCH_WEBHOOK_SECRET (10–100 chars), then restart.',
+      };
+    }
+
     const existing = await this.streamRepo.count({
       where: { guildId, platform: 'twitch' },
     });
@@ -81,7 +100,19 @@ export class TwitchAdminService {
       };
     }
 
-    const [user] = await this.helix.getUsersByLogin([username]);
+    let user;
+    try {
+      [user] = await this.helix.getUsersByLogin([username]);
+    } catch (e) {
+      // Helix lookup itself failed — almost always an app-token problem
+      // (wrong client id/secret, or Twitch 401/403). Surface it instead of
+      // letting it bubble up as a 500.
+      return {
+        ok: false,
+        reason: 'subscription_failed',
+        message: `Could not reach Twitch to look up "${username}": ${(e as Error).message}. Check TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET.`,
+      };
+    }
     if (!user) {
       return {
         ok: false,
@@ -118,11 +149,20 @@ export class TwitchAdminService {
       // Roll back the DB insert so the admin doesn't end up with a row
       // that has no EventSub backing. Bootstrap will retry creation on the
       // next session anyway, but we want adds to be atomic-feeling.
+      const detail = (e as Error).message;
       this.logger.warn(
-        `EventSub create failed for ${user.login}, rolling back DB row: ${(e as Error).message}`,
+        `EventSub create failed for ${user.login}, rolling back DB row: ${detail}`,
       );
       await this.streamRepo.delete(saved.id);
-      throw e;
+      // Return a typed error rather than re-throwing — an EventSub rejection is
+      // an expected, user-actionable condition (bad callback URL, Twitch 4xx),
+      // not a server fault. Re-throwing surfaced it to the client as an opaque
+      // 500 "Internal server error"; this carries the real Twitch reason.
+      return {
+        ok: false,
+        reason: 'subscription_failed',
+        message: `Twitch rejected the subscription: ${detail}. Verify TWITCH_WEBHOOK_CALLBACK_URL is a public HTTPS URL Twitch can reach and the secret is 10–100 chars.`,
+      };
     }
 
     return { ok: true, subscription: saved };
