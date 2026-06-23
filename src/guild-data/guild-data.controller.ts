@@ -113,7 +113,7 @@ export class GuildDataController {
       sent = await (channel as TextChannel).send({
         content: content ?? undefined,
         embeds: (safeEmbed ? [safeEmbed] : []) as never,
-        components: (componentsJson ?? []) as never,
+        components: toDiscordComponents(componentsJson) as never,
       });
     } catch (e) {
       throw new BadRequestException(
@@ -172,7 +172,7 @@ export class GuildDataController {
             const content = msg.content?.trim() || undefined;
             const safeEmbed = sanitizeEmbedForDiscord(msg.embedJson);
             const embeds = safeEmbed ? [safeEmbed] : [];
-            const components = msg.componentsJson ?? [];
+            const components = toDiscordComponents(msg.componentsJson);
             await discordMsg.edit({
               content: content ?? '',
               embeds: embeds as never,
@@ -419,6 +419,53 @@ function sanitizeEmbedForDiscord(
   const renderable = ['title', 'description', 'fields', 'image', 'thumbnail', 'author', 'footer'];
   if (!renderable.some((k) => k in out)) return null;
   return out;
+}
+
+/**
+ * Normalize stored button rows into Discord's raw REST API shape before
+ * sending/editing a message.
+ *
+ * The dashboard serializer stores buttons in camelCase (`customId`) — but
+ * Discord's API requires snake_case `custom_id`, and discord.js passes plain
+ * objects straight through WITHOUT converting. So a stored `customId` reaches
+ * Discord as an unknown field while the required `custom_id` is missing →
+ * Discord 400 (`custom_id` is required), which is exactly why "add role button"
+ * kept failing even after the embed fix. Accepts either casing (template-side
+ * data may already be snake_case) and rebuilds clean rows of action-row +
+ * button objects, dropping anything malformed.
+ */
+function toDiscordComponents(rows: unknown[] | null | undefined): unknown[] {
+  if (!Array.isArray(rows)) return [];
+  const result: unknown[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const comps = (row as { components?: unknown[] }).components;
+    if (!Array.isArray(comps)) continue;
+    const buttons: Record<string, unknown>[] = [];
+    for (const c of comps) {
+      if (!c || typeof c !== 'object') continue;
+      const b = c as Record<string, unknown>;
+      const btn: Record<string, unknown> = { type: 2 };
+      if (b.label != null) btn.label = b.label;
+      if (b.emoji != null) btn.emoji = b.emoji;
+      if (b.disabled != null) btn.disabled = b.disabled;
+      const url = b.url;
+      const customId = b.custom_id ?? b.customId;
+      if (url) {
+        btn.style = 5; // link buttons use a URL, no custom_id
+        btn.url = url;
+      } else {
+        if (b.style != null) btn.style = b.style;
+        if (customId != null) btn.custom_id = customId;
+      }
+      // A non-link button with no custom_id is invalid — skip it rather than
+      // let Discord reject the whole message.
+      if (btn.style !== 5 && btn.custom_id == null) continue;
+      buttons.push(btn);
+    }
+    if (buttons.length) result.push({ type: 1, components: buttons.slice(0, 5) });
+  }
+  return result;
 }
 
 function parseJsonbArray(v: unknown): unknown[] | null {
