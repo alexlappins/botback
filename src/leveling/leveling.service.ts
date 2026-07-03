@@ -4,6 +4,8 @@ import { Client, type Guild, type GuildMember } from 'discord.js';
 import { In, Repository } from 'typeorm';
 
 import { FeatureFlagsService } from '../common/feature-flags/feature-flags.service';
+import { BotPersonalizationService } from '../personalization/bot-personalization.service';
+import { PremiumService } from '../premium/premium.service';
 import { RankCardCacheService } from './rank-card-cache.service';
 import { RankCardRendererService, buildRankCardData } from './rank-card-renderer.service';
 import { IgnoredUser } from './entities/ignored-user.entity';
@@ -65,6 +67,8 @@ export class LevelingService {
     private readonly featureFlags: FeatureFlagsService,
     private readonly rankCardCache: RankCardCacheService,
     private readonly rankCardRenderer: RankCardRendererService,
+    private readonly premium: PremiumService,
+    private readonly personalization: BotPersonalizationService,
   ) {}
 
   /**
@@ -306,9 +310,10 @@ export class LevelingService {
     }
     const channel = guild.channels.cache.get(settings.levelupChannelId);
     if (channel?.isTextBased()) {
-      await channel.send({ content }).catch((e) =>
-        this.logger.warn(`Level-up message failed: ${(e as Error).message}`),
-      );
+      // Personalized identity on premium (TZ §8.2), plain bot send otherwise.
+      await this.personalization
+        .sendBotMessage(guild, channel as never, { content })
+        .catch((e) => this.logger.warn(`Level-up message failed: ${(e as Error).message}`));
     }
   }
 
@@ -319,6 +324,9 @@ export class LevelingService {
    */
   async applyRoleRewards(member: GuildMember, mode: 'stack' | 'replace'): Promise<void> {
     const serverId = member.guild.id;
+    // Premium gate (TZ v2.1 §6): rules stay stored on expiry but silently stop
+    // firing; they resume the moment premium is back. Never delete the data.
+    if (!(await this.premium.isPremium(serverId))) return;
     const rewards = await this.rewardRepo.find({ where: { serverId } });
     if (!rewards.length) return;
 

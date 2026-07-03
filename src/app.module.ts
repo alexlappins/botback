@@ -21,6 +21,9 @@ import { WelcomeModule } from './welcome/welcome.module';
 import { LevelingModule } from './leveling/leveling.module';
 import { FeatureFlagsModule } from './common/feature-flags/feature-flags.module';
 import { TwitchModule } from './twitch/twitch.module';
+import { PremiumModule } from './premium/premium.module';
+import { PersonalizationModule } from './personalization/personalization.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -55,6 +58,9 @@ import { TwitchModule } from './twitch/twitch.module';
     GuildDataModule,
     WelcomeModule,
     FeatureFlagsModule,
+    PremiumModule,
+    PersonalizationModule,
+    SchedulerModule,
     LevelingModule,
     TwitchModule,
   ],

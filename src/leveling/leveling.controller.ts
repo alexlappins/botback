@@ -21,6 +21,7 @@ import { In, Repository } from 'typeorm';
 import { Client } from 'discord.js';
 
 import { CustomerGuard } from '../auth/customer.guard';
+import { PremiumService } from '../premium/premium.service';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
 import { GuildsService } from '../dashboard/guilds.service';
@@ -85,6 +86,7 @@ export class LevelingController {
     private readonly rankCardRenderer: RankCardRendererService,
     private readonly rankCardCache: RankCardCacheService,
     private readonly permissions: LevelingPermissionsService,
+    private readonly premiumSvc: PremiumService,
   ) {}
 
   private async ensureAccess(guildId: string, req: Request): Promise<void> {
@@ -252,6 +254,11 @@ export class LevelingController {
     @Req() req: Request,
   ) {
     await this.ensureAccess(guildId, req);
+    // Premium gate (TZ v2.1 §6). Existing rules stay in the DB — only editing
+    // is blocked while free; the runtime apply is gated in LevelingService.
+    if (!(await this.premiumSvc.isPremium(guildId))) {
+      throw new BadRequestException({ message: 'Role Rewards is a Premium feature.', reason: 'premium_required' });
+    }
     const limit = this.featureFlags.getFeatureLimit(guildId, 'role_rewards_limit', 50);
     const incoming = Array.isArray(body?.rewards) ? body.rewards : [];
     if (incoming.length > limit) {

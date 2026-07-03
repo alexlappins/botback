@@ -24,6 +24,11 @@ async function bootstrap() {
     '/api/twitch/webhook',
     express.raw({ type: '*/*', limit: '1mb' }),
   );
+  // Stripe webhook: same story — signature verification needs the raw buffer.
+  app.use(
+    '/api/stripe/webhook',
+    express.raw({ type: '*/*', limit: '1mb' }),
+  );
   // Everything else: standard JSON + urlencoded.
   app.use(express.json({ limit: '5mb' }));
   app.use(express.urlencoded({ extended: true, limit: '5mb' }));

@@ -5,6 +5,8 @@ import { AttachmentBuilder, ButtonStyle, TextChannel } from 'discord.js';
 
 import { WelcomeService } from './welcome.service';
 import { ImageRendererService } from './image-renderer.service';
+import { BotPersonalizationService } from '../personalization/bot-personalization.service';
+import { PremiumService } from '../premium/premium.service';
 import { resolveVariables } from './variable-resolver';
 import type { WelcomeTemplate } from './entities/welcome-template.entity';
 import type { GoodbyeTemplate } from './entities/goodbye-template.entity';
@@ -16,6 +18,8 @@ export class WelcomeListeners {
   constructor(
     private readonly welcome: WelcomeService,
     private readonly renderer: ImageRendererService,
+    private readonly premium: PremiumService,
+    private readonly personalization: BotPersonalizationService,
   ) {}
 
   @On('guildMemberAdd')
@@ -32,7 +36,10 @@ export class WelcomeListeners {
       );
 
       if (!cfg.enabled) return;
-      const variant = this.welcome.pickWelcomeVariant(cfg, { returning });
+      // Premium gate (TZ v2.1 §3/§4): free → single active variant, no
+      // returning-member pool. Configs stay stored; gating happens at pick time.
+      const premium = await this.premium.isPremium(member.guild.id);
+      const variant = this.welcome.pickWelcomeVariant(cfg, { returning, premium });
       if (!variant) return;
 
       const resolved = resolveVariables(variant.text, {
@@ -43,11 +50,13 @@ export class WelcomeListeners {
       const components = buildLinkButtons(variant.buttonsConfig);
       const files: AttachmentBuilder[] = [];
       if (variant.imageEnabled) {
-        const buf = await this.renderer.render(variant, {
-          user: member.user,
-          member,
-          guild: member.guild,
-        });
+        // premium=false → stock template + watermark (TZ v2.1 §5); custom
+        // settings stay stored and re-apply automatically on renewal.
+        const buf = await this.renderer.render(
+          variant,
+          { user: member.user, member, guild: member.guild },
+          { premium },
+        );
         if (buf) files.push(new AttachmentBuilder(buf, { name: 'welcome.png' }));
       }
       const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
@@ -69,8 +78,10 @@ export class WelcomeListeners {
         if (!cfg.channelId) return;
         const channel = member.guild.channels.cache.get(cfg.channelId);
         if (!channel?.isTextBased()) return;
-        await (channel as TextChannel)
-          .send({
+        // Routed through personalization: custom identity on premium (TZ §8.2),
+        // plain bot send otherwise/on any webhook failure.
+        await this.personalization
+          .sendBotMessage(member.guild, channel as TextChannel, {
             content: messageContent || undefined,
             components: components as never,
             files,
@@ -93,6 +104,9 @@ export class WelcomeListeners {
     try {
       const cfg = await this.welcome.getGoodbye(member.guild.id);
       if (!cfg.enabled || !cfg.channelId) return;
+      // Goodbye is premium-only (TZ v2.1 §4). Config persists; it just stops
+      // firing on free and resumes when the subscription is back.
+      if (!(await this.premium.isPremium(member.guild.id))) return;
 
       const variant = this.welcome.pickGoodbyeVariant(cfg);
       if (!variant) return;
@@ -116,8 +130,11 @@ export class WelcomeListeners {
       }
       const messageContent = pickContentByMode(variant.imageSendMode, resolved, files.length > 0);
       if (!messageContent && !files.length) return;
-      await (channel as TextChannel)
-        .send({ content: messageContent || undefined, files })
+      await this.personalization
+        .sendBotMessage(member.guild, channel as TextChannel, {
+          content: messageContent || undefined,
+          files,
+        })
         .catch((e) =>
           this.logger.warn(
             `Goodbye message in #${(channel as TextChannel).name} failed: ${(e as Error).message}`,

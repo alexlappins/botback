@@ -42,35 +42,78 @@ export class ImageRendererService {
   /**
    * Render the welcome/goodbye image as PNG.
    * Returns null if rendering fails — listener falls back to text-only.
+   *
+   * `opts.premium=false` (TZ v2.1 §5): custom settings are IGNORED (not
+   * deleted — they stay in the DB and re-apply on renewal); the image renders
+   * with the stock default template plus a small "via lvl-up.studio"
+   * watermark bottom-right. Premium renders the stored custom config with no
+   * watermark.
    */
-  async render(input: RenderInput, ctx: RenderContext): Promise<Buffer | null> {
+  async render(
+    input: RenderInput,
+    ctx: RenderContext,
+    opts: { premium?: boolean } = {},
+  ): Promise<Buffer | null> {
+    const premium = opts.premium !== false; // default true (backwards compat for previews)
     try {
+      // Free plan: fall back to the stock template, keep the stored custom
+      // config untouched in the DB.
+      const effective: RenderInput = premium
+        ? input
+        : {
+            ...input,
+            backgroundImageUrl: null,
+            backgroundFill: DEFAULT_BG_FILL,
+            avatarConfig: DEFAULT_AVATAR_CONFIG,
+            usernameConfig: DEFAULT_USERNAME_CONFIG,
+            imageTextConfig: input.imageTextConfig
+              ? { ...DEFAULT_TEXT_CONFIG, text: input.imageTextConfig.text, enabled: input.imageTextConfig.enabled }
+              : DEFAULT_TEXT_CONFIG,
+          };
+
       const canvas = createCanvas(CANVAS_W, CANVAS_H);
       const c = canvas.getContext('2d');
 
-      await this.drawBackground(c, input);
+      await this.drawBackground(c, effective);
 
-      const avatarCfg = input.avatarConfig ?? DEFAULT_AVATAR_CONFIG;
+      const avatarCfg = effective.avatarConfig ?? DEFAULT_AVATAR_CONFIG;
       if (avatarCfg.enabled) {
         await this.drawAvatar(c, ctx.user, avatarCfg);
       }
 
-      const usernameCfg = input.usernameConfig ?? DEFAULT_USERNAME_CONFIG;
+      const usernameCfg = effective.usernameConfig ?? DEFAULT_USERNAME_CONFIG;
       if (usernameCfg.enabled) {
         this.drawText(c, ctx.user.username, usernameCfg);
       }
 
-      const textCfg = input.imageTextConfig ?? DEFAULT_TEXT_CONFIG;
+      const textCfg = effective.imageTextConfig ?? DEFAULT_TEXT_CONFIG;
       if (textCfg.enabled && textCfg.text) {
         const resolved = resolveVariables(textCfg.text, ctx);
         this.drawText(c, resolved, textCfg);
       }
+
+      if (!premium) this.drawWatermark(c);
 
       return canvas.toBuffer('image/png');
     } catch (e) {
       this.logger.warn(`Image render failed: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /** Small, unobtrusive brand mark bottom-right — free plan only (TZ §5.1). */
+  private drawWatermark(c: SKRSContext2D): void {
+    const text = 'via lvl-up.studio';
+    c.save();
+    c.font = '12px sans-serif';
+    c.textAlign = 'right';
+    c.textBaseline = 'bottom';
+    c.globalAlpha = 0.55;
+    c.fillStyle = '#000000';
+    c.fillText(text, CANVAS_W - 11, CANVAS_H - 9);
+    c.fillStyle = '#ffffff';
+    c.fillText(text, CANVAS_W - 12, CANVAS_H - 10);
+    c.restore();
   }
 
   /** Render a sample image with a placeholder user — used by dashboard live preview. */

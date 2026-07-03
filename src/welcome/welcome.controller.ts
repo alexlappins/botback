@@ -30,6 +30,7 @@ import type {
 } from './welcome.service';
 import { resolveVariables, SUPPORTED_VARIABLES } from './variable-resolver';
 import { ImageRendererService } from './image-renderer.service';
+import { PremiumService } from '../premium/premium.service';
 import type { ImageTextBlock } from './image-config.types';
 
 interface PreviewImageBody extends VariantImageFields {
@@ -44,6 +45,7 @@ export class WelcomeController {
     private readonly welcome: WelcomeService,
     private readonly renderer: ImageRendererService,
     private readonly guilds: GuildsService,
+    private readonly premium: PremiumService,
   ) {}
 
   private async ensureAccess(guildId: string, req: Request): Promise<void> {
@@ -70,6 +72,34 @@ export class WelcomeController {
     @Req() req: Request,
   ) {
     await this.ensureAccess(guildId, req);
+    // Premium gates (TZ v2.1 §3/§4). Existing stored variants are untouched —
+    // we only refuse NEW premium-shaped saves from free guilds:
+    //   * >1 new-member variant (free = single variant)
+    //   * any returning-member variants / enabling the returning pool
+    if (!(await this.premium.isPremium(guildId))) {
+      if (body.variants !== undefined) {
+        const newMember = body.variants.filter((v) => v.role !== 'returning_member');
+        const returning = body.variants.filter((v) => v.role === 'returning_member');
+        if (newMember.length > 1) {
+          throw new BadRequestException({
+            message: 'Multiple welcome variants are a Premium feature.',
+            reason: 'premium_required',
+          });
+        }
+        if (returning.length > 0) {
+          throw new BadRequestException({
+            message: 'Returning-member messages are a Premium feature.',
+            reason: 'premium_required',
+          });
+        }
+      }
+      if (body.returningMemberEnabled === true) {
+        throw new BadRequestException({
+          message: 'Returning-member messages are a Premium feature.',
+          reason: 'premium_required',
+        });
+      }
+    }
     return this.welcome.updateWelcome(guildId, body);
   }
 
@@ -176,6 +206,15 @@ export class WelcomeController {
     @Req() req: Request,
   ) {
     await this.ensureAccess(guildId, req);
+    // Goodbye is premium-only (TZ v2.1 §4). Existing config is preserved;
+    // free guilds just can't edit/enable it. Runtime firing is gated in the
+    // listener, so an expired sub silently stops sending without data loss.
+    if (!(await this.premium.isPremium(guildId))) {
+      throw new BadRequestException({
+        message: 'Goodbye messages are a Premium feature.',
+        reason: 'premium_required',
+      });
+    }
     return this.welcome.updateGoodbye(guildId, body);
   }
 

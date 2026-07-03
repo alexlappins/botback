@@ -211,13 +211,21 @@ export class WelcomeService {
 
   // ── Helpers used by listeners ──────────────────────────
 
-  /** Pick a random variant from the appropriate pool, or null. */
+  /**
+   * Pick a random variant from the appropriate pool, or null.
+   *
+   * Premium gating (TZ v2.1 §3/§4), applied at pick time so nothing is ever
+   * deleted — configs stay intact and reactivate the moment premium returns:
+   *   free → returning-member pool is ignored (returning is premium-only) and
+   *          only the FIRST new-member variant stays active.
+   */
   pickWelcomeVariant(
     cfg: WelcomeConfig,
-    opts: { returning?: boolean } = {},
+    opts: { returning?: boolean; premium?: boolean } = {},
   ): WelcomeTemplate | null {
+    const premium = opts.premium !== false; // default true for backwards compat
     const all = (cfg.templates ?? []).filter((t) => t.text?.trim());
-    const wantReturning = !!opts.returning && cfg.returningMemberEnabled;
+    const wantReturning = premium && !!opts.returning && cfg.returningMemberEnabled;
     let pool = all.filter(
       (t) =>
         (wantReturning ? t.role === 'returning_member' : t.role === 'new_member'),
@@ -227,6 +235,7 @@ export class WelcomeService {
       // use the new_member pool so the user still gets greeted.
       pool = all.filter((t) => t.role !== 'returning_member');
     }
+    if (!premium && pool.length > 1) pool = pool.slice(0, 1); // free = single active variant
     if (!pool.length) return null;
     return pool[Math.floor(Math.random() * pool.length)];
   }

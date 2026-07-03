@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { FeatureFlagsService } from '../common/feature-flags/feature-flags.service';
+import { PremiumService } from '../premium/premium.service';
 import { StreamSubscription } from './entities/stream-subscription.entity';
 import { TwitchHelixService } from './twitch-helix.service';
 import { TwitchSubscriptionManagerService } from './twitch-subscription-manager.service';
@@ -19,7 +20,8 @@ export interface AddError {
     | 'duplicate'
     | 'invalid_username'
     | 'not_configured'
-    | 'subscription_failed';
+    | 'subscription_failed'
+    | 'premium_required';
   message: string;
 }
 
@@ -45,6 +47,7 @@ export class TwitchAdminService {
     private readonly helix: TwitchHelixService,
     private readonly subs: TwitchSubscriptionManagerService,
     private readonly featureFlags: FeatureFlagsService,
+    private readonly premium: PremiumService,
   ) {}
 
   getLimit(guildId: string): number {
@@ -53,6 +56,17 @@ export class TwitchAdminService {
       'twitch_channels_limit',
       TwitchAdminService.DEFAULT_CHANNELS_LIMIT,
     );
+  }
+
+  /**
+   * Plan-aware limit (TZ v2.1 §7): free = 1 tracked channel, premium = the
+   * feature-flag limit. Used by addByUsername; existing rows above the limit
+   * are never deleted — they just stop notifying (gated in
+   * StreamNotificationsService) until premium returns.
+   */
+  async getLimitFor(guildId: string): Promise<number> {
+    if (await this.premium.isPremium(guildId)) return this.getLimit(guildId);
+    return 1;
   }
 
   async listForGuild(guildId: string): Promise<StreamSubscription[]> {
@@ -92,11 +106,15 @@ export class TwitchAdminService {
     const existing = await this.streamRepo.count({
       where: { guildId, platform: 'twitch' },
     });
-    if (existing >= this.getLimit(guildId)) {
+    const limit = await this.getLimitFor(guildId);
+    if (existing >= limit) {
       return {
         ok: false,
-        reason: 'limit_reached',
-        message: `Channel limit reached (${this.getLimit(guildId)}). Remove one before adding another.`,
+        reason: limit === 1 ? 'premium_required' : 'limit_reached',
+        message:
+          limit === 1
+            ? 'The free plan tracks one Twitch channel. Upgrade to Premium to track more.'
+            : `Channel limit reached (${limit}). Remove one before adding another.`,
       };
     }
 

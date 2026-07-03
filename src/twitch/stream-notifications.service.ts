@@ -15,6 +15,8 @@ import {
   StreamSubscription,
   type EmbedConfig,
 } from './entities/stream-subscription.entity';
+import { BotPersonalizationService } from '../personalization/bot-personalization.service';
+import { PremiumService } from '../premium/premium.service';
 import { TwitchHelixService, type TwitchStream, type TwitchUser } from './twitch-helix.service';
 
 export interface StreamOnlineEvent {
@@ -51,7 +53,24 @@ export class StreamNotificationsService {
     @InjectRepository(StreamSubscription)
     private readonly streamRepo: Repository<StreamSubscription>,
     private readonly helix: TwitchHelixService,
+    private readonly premium: PremiumService,
+    private readonly personalization: BotPersonalizationService,
   ) {}
+
+  /**
+   * Premium gate (TZ v2.1 §7): free guilds keep exactly ONE active tracked
+   * channel — the first one added (oldest createdAt). Extra channels stay in
+   * the DB but stop notifying until premium is (re)activated. Nothing is
+   * deleted; everything resumes automatically on renewal.
+   */
+  private async isSubActiveForPlan(sub: StreamSubscription): Promise<boolean> {
+    if (await this.premium.isPremium(sub.guildId)) return true;
+    const first = await this.streamRepo.findOne({
+      where: { guildId: sub.guildId, platform: 'twitch' },
+      order: { createdAt: 'ASC' },
+    });
+    return !first || first.id === sub.id;
+  }
 
   async onStreamOnline(event: StreamOnlineEvent): Promise<void> {
     const subs = await this.streamRepo.find({
@@ -74,6 +93,13 @@ export class StreamNotificationsService {
       if (sub.currentStreamId === event.streamId) {
         this.logger.debug(
           `Already notified for stream ${event.streamId} in guild ${sub.guildId}`,
+        );
+        continue;
+      }
+      // Free plan: only the first-added channel notifies (TZ v2.1 §7.4).
+      if (!(await this.isSubActiveForPlan(sub))) {
+        this.logger.debug(
+          `Skipping notification for ${sub.platformUsername} in ${sub.guildId} — beyond free plan limit`,
         );
         continue;
       }
@@ -134,8 +160,9 @@ export class StreamNotificationsService {
     // If the admin's content text contains a URL we don't want Discord to add
     // its own auto-unfurl preview underneath our hand-rolled embed.
     const contentHasUrl = /\bhttps?:\/\//.test(content);
-    await channel
-      .send({
+    // Personalized identity on premium (TZ §8.2), plain bot send otherwise.
+    await this.personalization
+      .sendBotMessage(guild, channel as never, {
         content: content || undefined,
         embeds: [embed],
         components: row ? [row] : undefined,
@@ -143,7 +170,7 @@ export class StreamNotificationsService {
       })
       .catch((e: Error) => {
         // Most common: bot missing Send Messages / Embed Links in this channel.
-        this.logger.warn(`channel.send for ${sub.guildId}/${sub.discordChannelId}: ${e.message}`);
+        this.logger.warn(`send for ${sub.guildId}/${sub.discordChannelId}: ${e.message}`);
       });
   }
 
