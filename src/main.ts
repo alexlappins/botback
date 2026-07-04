@@ -17,6 +17,9 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
+  // Behind nginx/caddy: trust X-Forwarded-* so req.protocol/host reflect the
+  // real public https origin (upload URLs, secure cookies).
+  app.set('trust proxy', 1);
   app.useStaticAssets(uploadsPath, { prefix: '/uploads/' });
 
   // Twitch webhook: raw bytes go through, parsed JSON attached as req.body.

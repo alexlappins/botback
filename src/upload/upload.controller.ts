@@ -1,6 +1,7 @@
-import { BadRequestException, Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request } from 'express';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
@@ -34,7 +35,7 @@ export class UploadController {
       limits: { fileSize: MAX_BYTES },
     }),
   )
-  upload(@UploadedFile() file: Express.Multer.File | undefined) {
+  upload(@UploadedFile() file: Express.Multer.File | undefined, @Req() req: Request) {
     if (!file) throw new BadRequestException('A file is required in the "file" field (multipart/form-data)');
     if (!ALLOWED_MIME.has(file.mimetype)) {
       try {
@@ -45,9 +46,15 @@ export class UploadController {
       throw new BadRequestException('Only images are allowed: PNG, JPEG, GIF, WebP');
     }
 
-    const port = this.config.get<string>('PORT') ?? '3000';
-    const base =
-      this.config.get<string>('PUBLIC_BASE_URL')?.replace(/\/$/, '') ?? `http://localhost:${port}`;
+    // The returned URL must be reachable by BOTH the admin's browser (preview)
+    // and Discord's servers (embed images) — i.e. absolute and public. The old
+    // fallback was http://localhost:<port>, which broke previews and made
+    // Discord reject the embed whenever PUBLIC_BASE_URL wasn't configured.
+    // Now: explicit PUBLIC_BASE_URL wins; otherwise derive from the request
+    // (with `trust proxy` set in main.ts this yields the real https origin
+    // behind nginx/caddy).
+    const derived = `${req.protocol}://${req.get('host') ?? `localhost:${this.config.get<string>('PORT') ?? '3000'}`}`;
+    const base = this.config.get<string>('PUBLIC_BASE_URL')?.replace(/\/$/, '') ?? derived;
     const publicPath = `/${UPLOAD_SUBDIR}/${file.filename}`;
     return {
       url: `${base}${publicPath}`,
