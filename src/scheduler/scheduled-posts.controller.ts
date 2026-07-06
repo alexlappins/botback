@@ -103,7 +103,9 @@ export class ScheduledPostsController {
     if (!row) throw new NotFoundException('Scheduled post not found');
     Object.assign(row, this.validate(body, false));
     if (body.status === 'paused') row.status = 'paused';
-    if (body.status === 'active' && row.status !== 'done') row.status = 'active';
+    // 'done' rows are editable too (TZ §3): passing status:'active' re-arms a
+    // fired post — initialNextRun below enforces a future runAt for one-offs.
+    if (body.status === 'active') row.status = 'active';
     // Recompute the next run whenever timing fields may have changed.
     if (
       body.kind !== undefined || body.runAt !== undefined || body.timeOfDay !== undefined ||

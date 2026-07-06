@@ -55,7 +55,9 @@ export class UploadController {
     // behind nginx/caddy).
     const derived = `${req.protocol}://${req.get('host') ?? `localhost:${this.config.get<string>('PORT') ?? '3000'}`}`;
     const base = this.config.get<string>('PUBLIC_BASE_URL')?.replace(/\/$/, '') ?? derived;
-    const publicPath = `/${UPLOAD_SUBDIR}/${file.filename}`;
+    // Files are served under /api/uploads/ so the URL works through the same
+    // reverse-proxy location as the REST API (see main.ts).
+    const publicPath = `/api/${UPLOAD_SUBDIR}/${file.filename}`;
     return {
       url: `${base}${publicPath}`,
       path: publicPath,

@@ -85,6 +85,16 @@ export class StripeService {
     return portal.url;
   }
 
+  /**
+   * Immediately cancel a Stripe subscription (owner-admin cancel, TZ §15.4) —
+   * unlike the customer portal flow, this does NOT wait for the period end,
+   * and it stops future invoices.
+   */
+  async cancelSubscriptionNow(externalId: string): Promise<void> {
+    if (!this.stripe) throw new BadRequestException('Payments are not configured on this bot');
+    await this.stripe.subscriptions.cancel(externalId);
+  }
+
   /** Verify signature and construct the event from the RAW request body. */
   constructWebhookEvent(rawBody: Buffer, signature: string): Stripe.Event {
     if (!this.stripe) throw new BadRequestException('Payments are not configured');

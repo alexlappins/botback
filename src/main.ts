@@ -20,6 +20,11 @@ async function bootstrap() {
   // Behind nginx/caddy: trust X-Forwarded-* so req.protocol/host reflect the
   // real public https origin (upload URLs, secure cookies).
   app.set('trust proxy', 1);
+  // Serve uploaded files under /api/ so they ride the same reverse-proxy
+  // route as the REST API — a bare /uploads/ path would need its own nginx
+  // location and otherwise falls through to the SPA (broken previews/embeds).
+  // The legacy /uploads/ prefix stays for URLs already saved in messages.
+  app.useStaticAssets(uploadsPath, { prefix: '/api/uploads/' });
   app.useStaticAssets(uploadsPath, { prefix: '/uploads/' });
 
   // Twitch webhook: raw bytes go through, parsed JSON attached as req.body.

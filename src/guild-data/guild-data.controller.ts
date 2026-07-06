@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -190,6 +191,54 @@ export class GuildDataController {
     return msg;
   }
 
+  /**
+   * Re-post an existing template to any channel, any number of times
+   * (Misha's TZ §2, ProBot-style). Sends a NEW Discord message from the
+   * stored snapshot and re-points the row at it, so dashboard edits now
+   * mirror to the latest copy. Earlier copies stay in Discord untouched.
+   */
+  @Post('messages/:msgId/send')
+  async resendMessage(
+    @Param('guildId') guildId: string,
+    @Param('msgId') msgId: string,
+    @Body() body: { discordChannelId?: string },
+    @Req() req: Request,
+  ) {
+    await this.ensureGuildAccess(guildId, req);
+    const msg = await this.messageRepo.findOne({ where: { id: msgId, guildId } });
+    if (!msg) throw new NotFoundException('Message not found');
+
+    const channelId = body?.discordChannelId?.trim() || msg.discordChannelId;
+    const guild =
+      this.client.guilds.cache.get(guildId) ??
+      (await this.client.guilds.fetch(guildId).catch(() => null));
+    if (!guild) throw new NotFoundException('Guild not found');
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel?.isTextBased()) {
+      throw new BadRequestException('Selected channel is not a text channel');
+    }
+
+    const safeEmbed = sanitizeEmbedForDiscord(msg.embedJson);
+    let sent;
+    try {
+      sent = await (channel as TextChannel).send({
+        content: msg.content?.trim() || undefined,
+        embeds: (safeEmbed ? [safeEmbed] : []) as never,
+        components: toDiscordComponents(msg.componentsJson) as never,
+      });
+    } catch (e) {
+      throw new BadRequestException(
+        `Failed to send message to Discord: ${(e as Error).message}`,
+      );
+    }
+
+    msg.discordChannelId = channelId;
+    msg.discordMessageId = sent.id;
+    msg.channelName = (channel as TextChannel).name ?? 'unknown';
+    await this.messageRepo.save(msg);
+    return msg;
+  }
+
   @Delete('messages/:msgId')
   async deleteMessage(
     @Param('guildId') guildId: string,
@@ -323,6 +372,64 @@ export class GuildDataController {
         return existing;
       }
     });
+    return row;
+  }
+
+  @Put('reaction-roles/:rrId')
+  async updateReactionRole(
+    @Param('guildId') guildId: string,
+    @Param('rrId') rrId: string,
+    @Body() body: { emojiKey?: string; discordRoleId?: string },
+    @Req() req: Request,
+  ) {
+    await this.ensureGuildAccess(guildId, req);
+    const row = await this.reactionRepo.findOne({ where: { id: rrId, guildId } });
+    if (!row) throw new NotFoundException('Reaction role not found');
+
+    const rawEmoji = body?.emojiKey?.trim();
+    const newRoleId = body?.discordRoleId?.trim();
+    if (!rawEmoji && !newRoleId) {
+      throw new BadRequestException('Nothing to update: pass emojiKey and/or discordRoleId');
+    }
+    const newEmojiKey = rawEmoji ? normaliseEmojiKey(rawEmoji) : row.emojiKey;
+    const emojiChanged = newEmojiKey !== row.emojiKey;
+
+    if (emojiChanged) {
+      // The new emoji must land on the message BEFORE we rewire storage —
+      // same fail-fast rule as addReactionRole: never persist a dead binding.
+      const guild =
+        this.client.guilds.cache.get(guildId) ??
+        (await this.client.guilds.fetch(guildId).catch(() => null));
+      if (!guild) throw new BadRequestException('Server not found or bot is not on it');
+      const channel = guild.channels.cache.get(row.discordChannelId);
+      if (!channel || !channel.isTextBased()) {
+        throw new BadRequestException('Channel not found or not a text channel');
+      }
+      const discordMsg = await (channel as TextChannel).messages
+        .fetch(row.discordMessageId)
+        .catch(() => null);
+      if (!discordMsg) throw new BadRequestException('Message not found in that channel');
+      try {
+        await discordMsg.react(rawEmoji!);
+      } catch (e) {
+        throw new BadRequestException(
+          `Couldn't react with that emoji: ${(e as Error).message}. ` +
+            'For custom emojis use the format <:name:id>; for unicode just paste the character.',
+        );
+      }
+      // Drop the bot's old reaction (best-effort) and the old binding.
+      const target = discordMsg.reactions.cache.find(
+        (r: MessageReaction) => (r.emoji.id ?? r.emoji.name) === row.emojiKey,
+      );
+      await target?.remove().catch(() => null);
+      this.storage.removeReactionRoleBinding(guildId, row.discordMessageId, row.emojiKey);
+    }
+
+    row.emojiKey = newEmojiKey;
+    if (newRoleId) row.discordRoleId = newRoleId;
+    this.storage.setReactionRoleBinding(guildId, row.discordMessageId, row.emojiKey, row.discordRoleId);
+    this.storage.setReactionRoleChannel(guildId, row.discordMessageId, row.discordChannelId);
+    await this.reactionRepo.save(row);
     return row;
   }
 

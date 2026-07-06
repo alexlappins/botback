@@ -2,7 +2,9 @@ import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { AdminSubscriptionsController } from './admin-subscriptions.controller';
 import { GuildSubscription } from './entities/guild-subscription.entity';
+import { SubscriptionAuditLog } from './entities/subscription-audit-log.entity';
 import { PremiumController } from './premium.controller';
 import { PremiumService } from './premium.service';
 import { StripeService } from './stripe.service';
@@ -18,8 +20,11 @@ import { StripeWebhookController } from './stripe-webhook.controller';
  */
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([GuildSubscription]), forwardRef(() => DashboardModule)],
-  controllers: [PremiumController, StripeWebhookController],
+  imports: [
+    TypeOrmModule.forFeature([GuildSubscription, SubscriptionAuditLog]),
+    forwardRef(() => DashboardModule),
+  ],
+  controllers: [PremiumController, StripeWebhookController, AdminSubscriptionsController],
   providers: [PremiumService, StripeService],
   exports: [PremiumService],
 })
