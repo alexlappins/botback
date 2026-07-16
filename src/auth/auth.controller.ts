@@ -2,6 +2,7 @@ import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request, Response } from 'express';
+import { DiscordAuthGuard } from './discord-auth.guard';
 import { SessionGuard } from './session.guard';
 import type { SessionUser } from './session.serializer';
 
@@ -10,9 +11,10 @@ export class AuthController {
   constructor(private readonly config: ConfigService) {}
 
   @Get('discord')
-  @UseGuards(AuthGuard('discord'))
+  @UseGuards(DiscordAuthGuard)
   discordLogin() {
-    // Passport redirects to Discord
+    // Passport redirects to Discord. ?returnTo=/path is stashed in the
+    // session by DiscordAuthGuard and honoured by the callback below.
   }
 
   @Get('callback')
@@ -24,7 +26,18 @@ export class AuthController {
     // users straight to message templates (the shop is hidden until launch,
     // so landing on the public root would just show the marketing page).
     const user = req.user as SessionUser | undefined;
-    const landingPath = user?.role === 'admin' ? '/server-templates' : '/server-messages';
+    // OAuth return rule (shop TZ-1 §0): land exactly where the user would
+    // have been had they already been logged in when they clicked — e.g. an
+    // interrupted Buy resumes checkout. Fallback: role-based landing page.
+    const sess = req.session as unknown as Record<string, unknown>;
+    const stashed = typeof sess.returnTo === 'string' ? sess.returnTo : null;
+    delete sess.returnTo;
+    const landingPath =
+      stashed && stashed.startsWith('/') && !stashed.startsWith('//')
+        ? stashed
+        : user?.role === 'admin'
+          ? '/server-templates'
+          : '/server-messages';
 
     req.logIn(req.user as Express.User, (loginErr) => {
       if (loginErr) {

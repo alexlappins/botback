@@ -32,6 +32,11 @@ import {
 export interface TemplateInstallOptions {
   /** How to merge template leveling config with whatever's on the destination guild. */
   levelingMode?: LevelingDeployMode;
+  /**
+   * Coarse stage callback for live progress UIs (shop install flow, TZ-2 §2
+   * step 4). Codes: roles | channels | messages | emojis | features | finishing.
+   */
+  onProgress?: (step: string) => void;
 }
 
 const LOG_TYPES: (keyof LogChannelsConfig)[] = [
@@ -315,6 +320,7 @@ export class TemplateInstallService {
       }
 
       // 1. Роли (сортируем по position) — пропускаем если роль с таким именем уже есть
+      options.onProgress?.('roles');
       const roles = (template.roles ?? []).slice().sort((a, b) => a.position - b.position);
       for (const r of roles) {
         const existingId = guildRoleIdByName.get(r.name);
@@ -527,6 +533,7 @@ export class TemplateInstallService {
       }
 
       // 3. Каналы (не категории): text, voice и т.д. — пропускаем если уже есть на гильдии
+      options.onProgress?.('channels');
       const channels = (template.channels ?? []).slice().sort((a, b) => a.position - b.position);
       for (const ch of channels) {
         const existingId = guildChannelIdByName.get(ch.name);
@@ -662,6 +669,7 @@ export class TemplateInstallService {
       }
 
       // 4. Сообщения: группируем по channelName, сортируем по messageOrder
+      options.onProgress?.('messages');
       const messages = (template.messages ?? []).slice().sort(
         (a, b) => a.channelName.localeCompare(b.channelName) || a.messageOrder - b.messageOrder,
       );
@@ -798,6 +806,7 @@ export class TemplateInstallService {
       }
 
       // 7. Эмодзи
+      options.onProgress?.('emojis');
       const emojis = template.emojis ?? [];
       for (const em of emojis) {
         // Discord требует имя 2-32 символа, [a-zA-Z0-9_]
@@ -834,6 +843,7 @@ export class TemplateInstallService {
       // ─── Step 6: Welcome / Goodbye ─────────────────────
       // Resolve template-level channel names to live channel IDs, then create
       // (or replace) WelcomeConfig / GoodbyeConfig with full per-variant copies.
+      options.onProgress?.('features');
       try {
         await this.applyWelcomeGoodbye(guildId, template, guildChannelIdByName);
         summary.welcomeVariantsApplied = (template.welcomeVariants ?? []).length;

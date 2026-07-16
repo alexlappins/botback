@@ -1,6 +1,8 @@
 import { BadRequestException, Controller, Headers, Logger, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import type Stripe from 'stripe';
 
+import { StoreService } from '../store/store.service';
 import { StripeService } from './stripe.service';
 
 /**
@@ -16,7 +18,10 @@ import { StripeService } from './stripe.service';
 export class StripeWebhookController {
   private readonly logger = new Logger(StripeWebhookController.name);
 
-  constructor(private readonly stripe: StripeService) {}
+  constructor(
+    private readonly stripe: StripeService,
+    private readonly store: StoreService,
+  ) {}
 
   @Post()
   async handle(@Req() req: Request, @Headers('stripe-signature') signature?: string) {
@@ -35,7 +40,17 @@ export class StripeWebhookController {
     }
 
     try {
-      await this.stripe.handleEvent(event);
+      // One Stripe account, two flows (TZ-1 §4.2): shop purchases are
+      // mode:payment sessions tagged metadata.type=shop_product; everything
+      // else stays on the premium-subscription path untouched.
+      const isShopCheckout =
+        event.type === 'checkout.session.completed' &&
+        (event.data.object as Stripe.Checkout.Session).metadata?.type === 'shop_product';
+      if (isShopCheckout) {
+        await this.store.handleStripeCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      } else {
+        await this.stripe.handleEvent(event);
+      }
     } catch (e) {
       // Log loudly but ack — handlers are idempotent and a retry storm helps no one.
       this.logger.error(`Stripe event ${event.type} (${event.id}) failed: ${(e as Error).message}`);

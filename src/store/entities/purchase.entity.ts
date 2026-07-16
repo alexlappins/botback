@@ -28,6 +28,17 @@ export class Purchase {
   @Column({ type: 'varchar', length: 16, default: 'paid' })
   status: PurchaseStatus;
 
+  /** Store product row this purchase came from (nullable for legacy rows). */
+  @Column({ name: 'product_id', type: 'uuid', nullable: true })
+  productId: string | null;
+
+  /** Set after the purchased server is successfully deployed (TZ-2). */
+  @Column({ name: 'deployed_guild_id', type: 'varchar', length: 32, nullable: true })
+  deployedGuildId: string | null;
+
+  @Column({ name: 'deployed_at', type: 'timestamptz', nullable: true })
+  deployedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

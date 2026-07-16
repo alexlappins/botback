@@ -2,6 +2,7 @@ import { forwardRef, Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { StoreModule } from '../store/store.module';
 import { AdminSubscriptionsController } from './admin-subscriptions.controller';
 import { GuildSubscription } from './entities/guild-subscription.entity';
 import { SubscriptionAuditLog } from './entities/subscription-audit-log.entity';
@@ -23,9 +24,12 @@ import { StripeWebhookController } from './stripe-webhook.controller';
   imports: [
     TypeOrmModule.forFeature([GuildSubscription, SubscriptionAuditLog]),
     forwardRef(() => DashboardModule),
+    // Shop checkout sessions share the Stripe account/webhook with premium —
+    // the webhook controller routes shop events into StoreService (TZ-1 §4.2).
+    forwardRef(() => StoreModule),
   ],
   controllers: [PremiumController, StripeWebhookController, AdminSubscriptionsController],
   providers: [PremiumService, StripeService],
-  exports: [PremiumService],
+  exports: [PremiumService, StripeService],
 })
 export class PremiumModule {}

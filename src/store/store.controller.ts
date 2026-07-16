@@ -8,20 +8,21 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard';
 import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionUser } from '../auth/session.serializer';
-import type { StoreCategory } from './entities/store-template.entity';
+import type { ProductStatus, StoreCategory } from './entities/store-template.entity';
+import { InstallFlowService } from './install-flow.service';
 import { StoreService, type StoreSort } from './store.service';
 
 const VALID_SORTS: StoreSort[] = ['newest', 'popular', 'price_asc', 'price_desc'];
 const VALID_CATEGORIES: StoreCategory[] = [
+  'streamer',
+  'vtuber',
   'gaming',
   'community',
   'anime',
@@ -29,12 +30,13 @@ const VALID_CATEGORIES: StoreCategory[] = [
   'streaming',
   'other',
 ];
+const VALID_STATUSES: ProductStatus[] = ['draft', 'published', 'archived'];
 
 @Controller('api/store')
 export class StoreController {
   constructor(
     private readonly store: StoreService,
-    private readonly config: ConfigService,
+    private readonly installFlow: InstallFlowService,
   ) {}
 
   @Get('templates')
@@ -80,17 +82,21 @@ export class StoreController {
     return this.store.listFacets();
   }
 
-  @Get('templates/:id')
+  /** Product page payload — `key` is the slug (or legacy row id). */
+  @Get('templates/:key')
   @Header('Cache-Control', 'no-store')
-  getOne(@Param('id') id: string) {
-    return this.store.getById(id);
+  getOne(@Param('key') key: string) {
+    return this.store.getBySlugOrId(key);
   }
 
+  /** Buy click → Stripe Checkout URL (TZ-1 §4.1). */
   @Post('checkout')
   @UseGuards(SessionGuard, CustomerGuard)
-  checkout(@Req() req: Request, @Body() body: { templateId: string }) {
+  checkout(@Req() req: Request, @Body() body: { productId?: string; templateId?: string }) {
     const user = (req as Request & { user: SessionUser }).user;
-    return this.store.checkout(user.id, body.templateId);
+    const key = body?.productId?.trim() || body?.templateId?.trim();
+    if (!key) throw new BadRequestException('productId required');
+    return this.store.checkout(user.id, key);
   }
 
   @Get('my-purchases')
@@ -102,40 +108,30 @@ export class StoreController {
     return this.store.myPurchases(user.id);
   }
 
-  /**
-   * Webhook skeleton for payment providers.
-   * Expected body:
-   * { event: 'payment.succeeded', provider: 'stripe', externalPaymentId, userId, templateId }
-   */
-  @Post('webhook')
-  async webhook(
-    @Req() req: Request,
-    @Body()
-    body: {
-      event?: string;
-      provider?: string;
-      externalPaymentId?: string;
-      userId?: string;
-      templateId?: string;
-    },
-  ) {
-    const expectedSecret = this.config.get<string>('STORE_WEBHOOK_SECRET', '');
-    if (expectedSecret) {
-      const provided = (req.headers['x-webhook-secret'] ?? '').toString();
-      if (provided !== expectedSecret) throw new UnauthorizedException('Invalid webhook secret');
-    }
-    if (body.event !== 'payment.succeeded') {
-      return { ok: true, ignored: true };
-    }
-    if (!body.provider || !body.externalPaymentId || !body.userId || !body.templateId) {
-      throw new BadRequestException('provider, externalPaymentId, userId, templateId required');
-    }
-    return this.store.finalizePaidPurchase({
-      userId: body.userId,
-      templateId: body.templateId,
-      provider: body.provider,
-      externalPaymentId: body.externalPaymentId,
-    });
+  // ── Install flow (TZ-2) ─────────────────────────────────
+
+  @Post('installs')
+  @UseGuards(SessionGuard, CustomerGuard)
+  startInstall(@Req() req: Request, @Body() body: { purchaseId?: string }) {
+    const user = (req as Request & { user: SessionUser }).user;
+    if (!body?.purchaseId) throw new BadRequestException('purchaseId required');
+    return this.installFlow.start(body.purchaseId, user.id);
+  }
+
+  @Get('installs/:id')
+  @UseGuards(SessionGuard, CustomerGuard)
+  @Header('Cache-Control', 'no-store')
+  installStatus(@Req() req: Request, @Param('id') id: string) {
+    const user = (req as Request & { user: SessionUser }).user;
+    return this.installFlow.getStatus(id, user.id);
+  }
+
+  /** Manual "I've added the bot — start installation" trigger. */
+  @Post('installs/:id/trigger')
+  @UseGuards(SessionGuard, CustomerGuard)
+  installTrigger(@Req() req: Request, @Param('id') id: string) {
+    const user = (req as Request & { user: SessionUser }).user;
+    return this.installFlow.trigger(id, user.id);
   }
 }
 
@@ -155,12 +151,17 @@ export class AdminStoreController {
     @Body()
     body: {
       templateId: string;
+      slug?: string | null;
+      name?: string | null;
       price?: number;
+      oldPrice?: number | null;
       currency?: string;
-      isActive?: boolean;
+      status?: ProductStatus;
+      shortDescription?: string | null;
       longDescription?: string | null;
       category?: StoreCategory | null;
       tags?: string[];
+      coverImageUrl?: string | null;
       screenshots?: string[];
       featured?: boolean;
       featuredOrder?: number;
@@ -169,7 +170,21 @@ export class AdminStoreController {
     if (body.category !== undefined && body.category !== null && !VALID_CATEGORIES.includes(body.category)) {
       throw new BadRequestException(`category must be one of ${VALID_CATEGORIES.join(', ')}`);
     }
+    if (body.status !== undefined && !VALID_STATUSES.includes(body.status)) {
+      throw new BadRequestException(`status must be one of ${VALID_STATUSES.join(', ')}`);
+    }
     return this.store.upsertStoreTemplate(body);
   }
-}
 
+  /** Orders tab (TZ-1 §6.3). */
+  @Get('orders')
+  @Header('Cache-Control', 'no-store')
+  orders() {
+    return this.store.listOrders();
+  }
+
+  @Post('orders/:id/refund')
+  refund(@Param('id') id: string) {
+    return this.store.refundPurchase(id);
+  }
+}

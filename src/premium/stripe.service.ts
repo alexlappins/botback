@@ -95,6 +95,73 @@ export class StripeService {
     await this.stripe.subscriptions.cancel(externalId);
   }
 
+  /**
+   * One-off payment checkout for a shop product (TZ-1 §4.1). mode:payment,
+   * price built dynamically from the DB (no pre-created Stripe products).
+   * metadata.type distinguishes these sessions from premium subscriptions in
+   * the shared webhook.
+   *
+   * NOTE: consent_collection.terms_of_service requires the Terms URL to be
+   * set in Stripe Dashboard → Settings → Public details. Link/Apple/Google
+   * Pay availability is an account-level Stripe setting.
+   */
+  async createProductCheckoutSession(input: {
+    productId: string;
+    templateId: string;
+    slug: string;
+    name: string;
+    /** Whole dollars (DB stores int USD). */
+    price: number;
+    currency: string;
+    coverImageUrl?: string | null;
+    userId: string;
+  }): Promise<string> {
+    if (!this.stripe) throw new BadRequestException('Payments are not configured on this bot');
+    const frontend = this.config.get<string>('FRONTEND_URL', 'http://localhost:5173');
+    const metadata = {
+      type: 'shop_product',
+      product_id: input.productId,
+      template_id: input.templateId,
+      discord_user_id: input.userId,
+    };
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: input.currency.toLowerCase(),
+            unit_amount: Math.round(input.price * 100),
+            product_data: {
+              name: input.name,
+              ...(input.coverImageUrl ? { images: [input.coverImageUrl] } : {}),
+            },
+          },
+        },
+      ],
+      consent_collection: { terms_of_service: 'required' },
+      custom_text: {
+        terms_of_service_acceptance: {
+          message:
+            `I agree to the [Terms of Service](${frontend}/terms) and request immediate ` +
+            'delivery, waiving the 14-day EU right of withdrawal once the product is provided.',
+        },
+      },
+      metadata,
+      payment_intent_data: { metadata },
+      success_url: `${frontend}/purchases?status=success`,
+      cancel_url: `${frontend}/shop/${input.slug}`,
+    });
+    if (!session.url) throw new BadRequestException('Stripe did not return a checkout URL');
+    return session.url;
+  }
+
+  /** Full refund of a one-off payment (owner admin, TZ-1 §6.3). */
+  async refundPaymentIntent(paymentIntentId: string): Promise<void> {
+    if (!this.stripe) throw new BadRequestException('Payments are not configured on this bot');
+    await this.stripe.refunds.create({ payment_intent: paymentIntentId });
+  }
+
   /** Verify signature and construct the event from the RAW request body. */
   constructWebhookEvent(rawBody: Buffer, signature: string): Stripe.Event {
     if (!this.stripe) throw new BadRequestException('Payments are not configured');
