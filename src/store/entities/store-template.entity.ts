@@ -44,10 +44,11 @@ export class StoreTemplate {
   @Column({ type: 'varchar', length: 128, nullable: true })
   name: string | null;
 
+  /** Price in CENTS (integer, never float — shop TZ §3). $99.99 → 9999. */
   @Column({ type: 'int', default: 0 })
   price: number;
 
-  /** Strikethrough price for showing a discount; null = no discount shown. */
+  /** Strikethrough price in CENTS; null = no discount shown. */
   @Column({ name: 'old_price', type: 'int', nullable: true })
   oldPrice: number | null;
 

@@ -19,6 +19,7 @@ export class Purchase {
   @Column({ name: 'external_payment_id', type: 'varchar', length: 128, nullable: true, unique: true })
   externalPaymentId: string | null;
 
+  /** Paid amount in CENTS (same unit as product prices — shop TZ §3). */
   @Column({ type: 'int', default: 0 })
   amount: number;
 

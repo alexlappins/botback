@@ -110,7 +110,7 @@ export class StripeService {
     templateId: string;
     slug: string;
     name: string;
-    /** Whole dollars (DB stores int USD). */
+    /** Price in CENTS (DB stores integer cents — shop TZ §3). */
     price: number;
     currency: string;
     coverImageUrl?: string | null;
@@ -131,7 +131,7 @@ export class StripeService {
           quantity: 1,
           price_data: {
             currency: input.currency.toLowerCase(),
-            unit_amount: Math.round(input.price * 100),
+            unit_amount: Math.round(input.price), // already cents
             product_data: {
               name: input.name,
               ...(input.coverImageUrl ? { images: [input.coverImageUrl] } : {}),

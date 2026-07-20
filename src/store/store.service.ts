@@ -293,7 +293,7 @@ export class StoreService {
     if (input.category !== undefined) row.category = input.category;
     if (input.tags !== undefined) row.tags = cleanStringArray(input.tags, 24);
     if (input.coverImageUrl !== undefined) row.coverImageUrl = input.coverImageUrl?.trim() || null;
-    if (input.screenshots !== undefined) row.screenshots = cleanStringArray(input.screenshots, 12);
+    if (input.screenshots !== undefined) row.screenshots = cleanStringArray(input.screenshots, 20);
     if (input.featured !== undefined) row.featured = input.featured;
     if (input.featuredOrder !== undefined) row.featuredOrder = input.featuredOrder;
 
@@ -390,7 +390,8 @@ export class StoreService {
       userId,
       templateId: st.templateId,
       productId: st.id,
-      amount: session.amount_total != null ? Math.round(session.amount_total / 100) : st.price,
+      // amount_total is already cents — same unit as our DB (TZ §3).
+      amount: session.amount_total != null ? session.amount_total : st.price,
       currency: (session.currency ?? st.currency).toUpperCase(),
       status: 'paid',
       provider: 'stripe',
@@ -427,7 +428,7 @@ export class StoreService {
           color: 0x57f287,
           fields: [
             { name: 'Product', value: product.name, inline: true },
-            { name: 'Amount', value: `${purchase.amount} ${purchase.currency}`, inline: true },
+            { name: 'Amount', value: `${(purchase.amount / 100).toFixed(2)} ${purchase.currency}`, inline: true },
             { name: 'Buyer', value: buyer, inline: false },
           ],
           timestamp: new Date().toISOString(),

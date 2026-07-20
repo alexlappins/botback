@@ -10,7 +10,9 @@ import { CustomerGuard } from '../auth/customer.guard';
 import { SessionGuard } from '../auth/session.guard';
 
 const UPLOAD_SUBDIR = 'uploads';
-const MAX_BYTES = 8 * 1024 * 1024;
+// 20 MB — animated GIF covers for shop products are heavy (shop TZ §2).
+// NOTE: nginx client_max_body_size must be >= this or uploads 413 at the proxy.
+const MAX_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
 
 function uploadsDir(): string {
