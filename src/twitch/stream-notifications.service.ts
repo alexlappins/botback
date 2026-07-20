@@ -1,3 +1,4 @@
+import { SecurityBridge } from '../common/security-bridge.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -55,6 +56,7 @@ export class StreamNotificationsService {
     private readonly helix: TwitchHelixService,
     private readonly premium: PremiumService,
     private readonly personalization: BotPersonalizationService,
+      private readonly securityBridge: SecurityBridge,
   ) {}
 
   /**
@@ -110,6 +112,10 @@ export class StreamNotificationsService {
         sub.currentStreamStartedAt = new Date(event.startedAt);
         sub.lastNotifiedAt = new Date();
         await this.streamRepo.save(sub);
+        // Security §8: Stream Shield reacts to tracked streams going live.
+        void this.securityBridge
+          .onStreamOnline?.(sub.guildId, sub.id, sub.platformUsername, stream?.title ?? null)
+          .catch(() => null);
       } catch (e) {
         this.logger.warn(
           `Failed to send Twitch notification for ${sub.platformUsername} in ${sub.guildId}: ${(e as Error).message}`,
@@ -127,6 +133,9 @@ export class StreamNotificationsService {
       sub.currentStreamId = null;
       sub.currentStreamStartedAt = null;
       await this.streamRepo.save(sub);
+      void this.securityBridge
+        .onStreamOffline?.(sub.guildId, sub.id, sub.platformUsername)
+        .catch(() => null);
     }
   }
 

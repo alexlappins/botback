@@ -79,6 +79,25 @@ export class GuildStorageService {
     return this.cache[guildId] ?? {};
   }
 
+  /** All guild ids present in the legacy JSON store (used by one-time migrations). */
+  getAllGuildIds(): string[] {
+    this.ensureLoaded();
+    return Object.keys(this.cache);
+  }
+
+  /** Subscribers notified on every legacy log-channel write (Server Logs 2.0
+   *  mirrors these into the preset system so template installs and old API
+   *  calls keep working). */
+  private logChannelWriteListeners: Array<
+    (guildId: string, type: keyof LogChannelsConfig, channelId: string | null) => void
+  > = [];
+
+  onLogChannelWrite(
+    cb: (guildId: string, type: keyof LogChannelsConfig, channelId: string | null) => void,
+  ): void {
+    this.logChannelWriteListeners.push(cb);
+  }
+
   setLogChannel(guildId: string, type: keyof LogChannelsConfig, channelId: string | null): void {
     this.ensureLoaded();
     if (!this.cache[guildId]) this.cache[guildId] = {};
@@ -89,6 +108,13 @@ export class GuildStorageService {
       delete (this.cache[guildId].logChannels as Record<string, string>)[type];
     }
     this.save();
+    for (const cb of this.logChannelWriteListeners) {
+      try {
+        cb(guildId, type, channelId);
+      } catch {
+        /* mirror failures must not break the write */
+      }
+    }
   }
 
   getLogChannel(guildId: string, type: keyof LogChannelsConfig): string | undefined {

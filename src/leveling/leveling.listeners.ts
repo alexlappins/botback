@@ -1,3 +1,4 @@
+import { SecurityBridge } from '../common/security-bridge.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { Context, On } from 'necord';
 import type { ContextOf } from 'necord';
@@ -14,7 +15,10 @@ import { LevelingService } from './leveling.service';
 export class LevelingListeners {
   private readonly logger = new Logger(LevelingListeners.name);
 
-  constructor(private readonly leveling: LevelingService) {}
+  constructor(
+    private readonly leveling: LevelingService,
+    private readonly securityBridge: SecurityBridge,
+  ) {}
 
   @On('messageCreate')
   async onMessageCreate(
@@ -37,6 +41,9 @@ export class LevelingListeners {
 
       // No-xp roles
       if (await this.leveling.hasNoXpRole(message.member)) return;
+
+      // Security §6.4: quarantined members earn no XP.
+      if (this.securityBridge.isQuarantined(message.member)) return;
 
       // Substantive message check
       if (!LevelingService.isMessageSubstantive(message.content, settings.chatXpMinLength)) return;

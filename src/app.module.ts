@@ -24,6 +24,7 @@ import { TwitchModule } from './twitch/twitch.module';
 import { PremiumModule } from './premium/premium.module';
 import { PersonalizationModule } from './personalization/personalization.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     PremiumModule,
     PersonalizationModule,
     SchedulerModule,
+    SecurityModule,
     LevelingModule,
     TwitchModule,
   ],

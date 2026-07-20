@@ -1,3 +1,4 @@
+import { SecurityBridge } from '../common/security-bridge.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { Context, On } from 'necord';
 import type { ContextOf } from 'necord';
@@ -20,6 +21,7 @@ export class WelcomeListeners {
     private readonly renderer: ImageRendererService,
     private readonly premium: PremiumService,
     private readonly personalization: BotPersonalizationService,
+    private readonly securityBridge: SecurityBridge,
   ) {}
 
   @On('guildMemberAdd')
@@ -27,6 +29,10 @@ export class WelcomeListeners {
     @Context() [member]: ContextOf<'guildMemberAdd'>,
   ): Promise<void> {
     try {
+      // Security §2.2/§6.4: kicked-by-age-filter and quarantined members get no welcome.
+      const verdict = await this.securityBridge.gateJoin(member).catch(() => 'allow' as const);
+      if (verdict !== 'allow') return;
+
       const cfg = await this.welcome.getWelcome(member.guild.id);
       // Always record sighting even if welcome is disabled — so flipping the
       // feature on later still correctly identifies returns.

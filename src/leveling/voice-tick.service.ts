@@ -1,3 +1,4 @@
+import { SecurityBridge } from '../common/security-bridge.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Client, ChannelType, type VoiceChannel, type StageChannel } from 'discord.js';
@@ -24,6 +25,7 @@ export class VoiceTickService {
   constructor(
     @Inject(Client) private readonly client: Client,
     private readonly leveling: LevelingService,
+    private readonly securityBridge: SecurityBridge,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE, { name: 'leveling.voice_tick' })
@@ -67,6 +69,7 @@ export class VoiceTickService {
         try {
           if (await this.leveling.isIgnored(serverId, member.id)) continue;
           if (await this.leveling.hasNoXpRole(member)) continue;
+          if (this.securityBridge.isQuarantined(member)) continue; // Security §6.4
 
           const xpRow = await this.leveling.getOrCreateXp(serverId, member.id);
           if (

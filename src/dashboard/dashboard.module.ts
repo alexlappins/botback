@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DashboardController } from './dashboard.controller';
 import { GuildsController } from './guilds.controller';
@@ -8,7 +8,7 @@ import { ServerTemplatesModule } from '../server-templates/server-templates.modu
 import { UserTemplateAccess } from '../server-templates/entities/user-template-access.entity';
 
 @Module({
-  imports: [LogsModule, ServerTemplatesModule, TypeOrmModule.forFeature([UserTemplateAccess])],
+  imports: [forwardRef(() => LogsModule), ServerTemplatesModule, TypeOrmModule.forFeature([UserTemplateAccess])],
   controllers: [DashboardController, GuildsController],
   providers: [GuildsService],
   exports: [GuildsService],
