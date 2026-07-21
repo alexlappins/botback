@@ -19,7 +19,7 @@ export class XpEventLog {
   discordId: string;
 
   @Column({ name: 'event_type', type: 'varchar', length: 16 })
-  eventType: 'chat' | 'voice' | 'admin_give' | 'admin_remove' | 'admin_set' | 'admin_reset';
+  eventType: 'chat' | 'voice' | 'watch' | 'admin_give' | 'admin_remove' | 'admin_set' | 'admin_reset';
 
   @Column({ name: 'xp_amount', type: 'int' })
   xpAmount: number;

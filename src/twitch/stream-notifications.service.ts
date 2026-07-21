@@ -1,4 +1,5 @@
 import { SecurityBridge } from '../common/security-bridge.service';
+import { TwitchEventDispatcher } from './twitch-event-dispatcher.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -57,7 +58,24 @@ export class StreamNotificationsService {
     private readonly premium: PremiumService,
     private readonly personalization: BotPersonalizationService,
       private readonly securityBridge: SecurityBridge,
-  ) {}
+    private readonly dispatcher: TwitchEventDispatcher,
+  ) {
+    // Existing live notifications keep working through the new dispatcher
+    // (TZ-A §0.1) — same payload mapping as the old direct calls.
+    this.dispatcher.on('stream.online', (event) =>
+      this.onStreamOnline({
+        broadcasterUserId: String(event.broadcaster_user_id ?? ''),
+        broadcasterUserLogin: String(event.broadcaster_user_login ?? ''),
+        broadcasterUserName: String(event.broadcaster_user_name ?? ''),
+        streamId: String(event.id ?? ''),
+        streamType: String(event.type ?? 'live'),
+        startedAt: String(event.started_at ?? new Date().toISOString()),
+      }),
+    );
+    this.dispatcher.on('stream.offline', (event) =>
+      this.onStreamOffline({ broadcasterUserId: String(event.broadcaster_user_id ?? '') }),
+    );
+}
 
   /**
    * Premium gate (TZ v2.1 §7): free guilds keep exactly ONE active tracked

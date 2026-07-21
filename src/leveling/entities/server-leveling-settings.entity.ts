@@ -25,6 +25,16 @@ export class ServerLevelingSettings {
   @Column({ name: 'levelup_channel_id', type: 'varchar', length: 32, nullable: true })
   levelupChannelId: string | null;
 
+  /** Twitch Watch Time XP (TZ-B §2, Premium). */
+  @Column({ name: 'watch_xp_enabled', type: 'boolean', default: false })
+  watchXpEnabled: boolean;
+
+  @Column({ name: 'watch_xp_per_tick', type: 'int', default: 10 })
+  watchXpPerTick: number;
+
+  @Column({ name: 'watch_xp_daily_cap', type: 'int', default: 600 })
+  watchXpDailyCap: number;
+
   @Column({ name: 'levelup_message_template', type: 'text', default: 'GG {user}! You hit level {level}!' })
   levelupMessageTemplate: string;
 

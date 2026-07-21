@@ -99,7 +99,11 @@ export class LogSettingsService implements OnModuleInit {
     const cached = this.cache.get(guildId);
     if (cached) return cached;
     let row = await this.repo.findOne({ where: { guildId } });
-    if (!row) row = this.repo.create({ guildId });
+    if (!row) {
+      // repo.create() doesn't apply column defaults — undefined booleans are
+      // falsy (correct here), but make the wire shape explicit anyway.
+      row = this.repo.create({ guildId, singleChannelMode: false, singleChannelId: null });
+    }
     this.cache.set(guildId, row);
     return row;
   }

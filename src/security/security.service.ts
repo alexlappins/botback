@@ -45,7 +45,38 @@ export class SecurityService implements OnModuleInit {
 
   async getSettings(guildId: string): Promise<SecuritySettings> {
     let row = await this.settingsRepo.findOne({ where: { guildId } });
-    if (!row) row = this.settingsRepo.create({ guildId });
+    // repo.create() does NOT apply column defaults — arrays/numbers must be
+    // spelled out or unsaved guilds crash on `.map`/`.includes`.
+    if (!row) {
+      row = this.settingsRepo.create({
+        guildId,
+        preset: null,
+        ageFilterEnabled: false,
+        ageFilterMinDays: 7,
+        ageFilterAction: 'alert',
+        ageFilterKickMessage: null,
+        panicSlowmodeEnabled: false,
+        panicSlowmodeSeconds: 30,
+        panelChannelId: null,
+        panelMessageId: null,
+        antiRaidAction: 'alert',
+        antiRaidAutoPanic: false,
+        antiNukeAction: 'alert',
+        quarantineRoleId: null,
+        quarantineChannelId: null,
+        shieldEnabled: false,
+        shieldPostAnnouncements: true,
+        shieldChannelId: null,
+        shieldTriggerSubs: [],
+        shieldSlowmodeEnabled: false,
+        shieldSlowmodeSeconds: 10,
+        shieldSlowmodeChannels: [],
+        shieldAgeFilterEnabled: false,
+        shieldAgeFilterDays: 14,
+        shieldEmbedOn: null,
+        shieldEmbedOff: null,
+      });
+    }
     return row;
   }
 

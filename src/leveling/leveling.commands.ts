@@ -189,6 +189,32 @@ export class LevelingPublicCommands {
         { name: 'Rank', value: `#${rank || '—'}`, inline: true },
         { name: 'Tier', value: tier ? `${tier.emoji ?? ''} ${tier.name}`.trim() : '—', inline: true },
       );
+    // TZ-B §2.6: nudge unlinked viewers when Watch Time XP is on here.
+    const settings = await this.leveling.getSettings(interaction.guildId);
+    if (settings.watchXpEnabled) {
+      const linked = await this.leveling.isViewerLinked?.(targetId);
+      if (linked === false) {
+        embed.setFooter({ text: 'Link your Twitch in the dashboard to earn XP for watching streams' });
+      }
+    }
+    return interaction.editReply({ embeds: [embed] });
+  }
+
+  /** TZ-B §2.5 — Top Fans leaderboard by accumulated watch time. */
+  @SlashCommand({ name: 'topfans', description: 'Top viewers by Twitch watch time' })
+  async onTopFans(@Context() [interaction]: SlashCommandContext) {
+    if (!interaction.guildId) return interaction.reply({ content: 'Server only.', ephemeral: true });
+    await interaction.deferReply();
+    const rows = await this.leveling.topWatchers(interaction.guildId, 10);
+    if (!rows.length) {
+      return interaction.editReply({ content: 'No watch time recorded yet. Link Twitch and catch a stream!' });
+    }
+    const lines = rows.map((r, i) => {
+      const hours = Math.floor(r.watchMinutes / 60);
+      const mins = r.watchMinutes % 60;
+      return `**${i + 1}.** <@${r.discordId}> — ${hours}h ${mins}m`;
+    });
+    const embed = new EmbedBuilder().setTitle('💜 Top Fans — watch time').setColor('#9146ff').setDescription(lines.join('\n'));
     return interaction.editReply({ embeds: [embed] });
   }
 

@@ -131,6 +131,46 @@ export class TwitchHelixService {
     return data.data[0];
   }
 
+  /** Channel stream schedule segments (app token, TZ-B §1.2). Null category-safe. */
+  async getChannelSchedule(broadcasterId: string): Promise<unknown[]> {
+    const res = await this.callRaw(
+      `${this.base}/schedule?broadcaster_id=${encodeURIComponent(broadcasterId)}&first=25`,
+    );
+    if (res.status === 404) return []; // streamer has no schedule
+    if (!res.ok) throw new Error(`Get schedule → ${res.status}`);
+    const json = (await res.json()) as { data?: { segments?: unknown[] } };
+    return json.data?.segments ?? [];
+  }
+
+  /**
+   * Get Chatters (TZ-B §2.3) — requires the STREAMER's user token with
+   * moderator:read:chatters; broadcaster acts as their own moderator.
+   * Handles pagination (2000+ viewer streams).
+   */
+  async getChatters(broadcasterId: string, userToken: string): Promise<{ user_id: string; user_login: string }[]> {
+    const all: { user_id: string; user_login: string }[] = [];
+    let cursor: string | undefined;
+    do {
+      const qs = new URLSearchParams({
+        broadcaster_id: broadcasterId,
+        moderator_id: broadcasterId,
+        first: '1000',
+      });
+      if (cursor) qs.set('after', cursor);
+      const res = await fetch(`${this.base}/chat/chatters?${qs}`, {
+        headers: { 'Client-Id': this.tokens.getClientId(), Authorization: `Bearer ${userToken}` },
+      });
+      if (!res.ok) throw new Error(`Get chatters → ${res.status}`);
+      const json = (await res.json()) as {
+        data: { user_id: string; user_login: string }[];
+        pagination?: { cursor?: string };
+      };
+      all.push(...json.data);
+      cursor = json.pagination?.cursor;
+    } while (cursor);
+    return all;
+  }
+
   /** Delete an EventSub subscription by Twitch subscription id. 404 is treated as success. */
   async deleteEventSubSubscription(id: string): Promise<void> {
     const res = await this.callRaw(`${this.base}/eventsub/subscriptions?id=${encodeURIComponent(id)}`, {

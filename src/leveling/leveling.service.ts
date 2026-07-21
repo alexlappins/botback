@@ -200,7 +200,7 @@ export class LevelingService {
     discordId: string,
     amount: number,
     eventType: XpEventType,
-    opts: { updateMessageCounter?: boolean; updateVoiceMinutes?: number } = {},
+    opts: { updateMessageCounter?: boolean; updateVoiceMinutes?: number; updateWatchMinutes?: number } = {},
   ): Promise<AwardXpResult> {
     const row = await this.getOrCreateXp(serverId, discordId);
     const oldTotal = BigInt(row.totalXp);
@@ -221,6 +221,9 @@ export class LevelingService {
     }
     if (opts.updateVoiceMinutes && opts.updateVoiceMinutes > 0) {
       row.voiceMinutes = (BigInt(row.voiceMinutes) + BigInt(opts.updateVoiceMinutes)).toString();
+    }
+    if (opts.updateWatchMinutes && opts.updateWatchMinutes > 0) {
+      row.watchMinutes = (BigInt(row.watchMinutes ?? '0') + BigInt(opts.updateWatchMinutes)).toString();
     }
     row.lastActiveAt = new Date();
 
@@ -322,12 +325,36 @@ export class LevelingService {
    *   stack   → add every reward role for level <= current; never remove.
    *   replace → ensure ONLY the single highest qualifying reward role is held.
    */
+  /** TZ-B §2.5 — Top Fans by accumulated watch minutes. */
+  async topWatchers(serverId: string, limit = 10): Promise<{ discordId: string; watchMinutes: number }[]> {
+    const rows = await this.xpRepo
+      .createQueryBuilder('x')
+      .where('x.server_id = :serverId', { serverId })
+      .andWhere('x.watch_minutes > 0')
+      .orderBy('x.watch_minutes', 'DESC')
+      .take(limit)
+      .getMany();
+    return rows.map((r) => ({ discordId: r.discordId, watchMinutes: Number(BigInt(r.watchMinutes ?? '0')) }));
+  }
+
+  /** Registered by the Twitch module (viewer_links lives there). */
+  isViewerLinked: ((discordUserId: string) => Promise<boolean>) | null = null;
+
+  /** Watch-hours role rewards (Twitch TZ-B §2.5). */
+  getWatchRoleRewards(serverId: string): Promise<RoleReward[]> {
+    return this.rewardRepo.find({ where: { serverId, conditionType: 'watch_hours' } });
+  }
+
   async applyRoleRewards(member: GuildMember, mode: 'stack' | 'replace'): Promise<void> {
     const serverId = member.guild.id;
     // Premium gate (TZ v2.1 §6): rules stay stored on expiry but silently stop
     // firing; they resume the moment premium is back. Never delete the data.
     if (!(await this.premium.isPremium(serverId))) return;
-    const rewards = await this.rewardRepo.find({ where: { serverId } });
+    // Watch-hours rewards (conditionType='watch_hours') are handled by the
+    // WatchXpService — the classic level path must not touch them.
+    const rewards = (await this.rewardRepo.find({ where: { serverId } })).filter(
+      (r) => (r.conditionType ?? 'level') === 'level',
+    );
     if (!rewards.length) return;
 
     const xp = await this.xpRepo.findOne({ where: { serverId, discordId: member.user.id } });

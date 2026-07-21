@@ -42,6 +42,17 @@ export class UserXp {
   @Column({ name: 'voice_minutes', type: 'bigint', default: 0 })
   voiceMinutes: string;
 
+  /** Twitch Watch Time XP (TZ-B §2.4): accumulated minutes watched. */
+  @Column({ name: 'watch_minutes', type: 'bigint', default: 0 })
+  watchMinutes: string;
+
+  /** Daily watch-XP counter for the anti-abuse cap (resets by date). */
+  @Column({ name: 'watch_xp_today', type: 'int', default: 0 })
+  watchXpToday: number;
+
+  @Column({ name: 'watch_xp_day', type: 'varchar', length: 10, nullable: true })
+  watchXpDay: string | null;
+
   @Column({ name: 'last_active_at', type: 'timestamp', nullable: true })
   lastActiveAt: Date | null;
 

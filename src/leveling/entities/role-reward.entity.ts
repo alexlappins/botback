@@ -15,4 +15,12 @@ export class RoleReward {
 
   @Column({ name: 'role_id', type: 'varchar', length: 32 })
   roleId: string;
+
+  /** 'level' (classic) | 'watch_hours' (TZ-B §2.5: N hours watched → role). */
+  @Column({ name: 'condition_type', type: 'varchar', length: 16, default: 'level' })
+  conditionType: 'level' | 'watch_hours';
+
+  /** Threshold in hours for conditionType='watch_hours'. */
+  @Column({ name: 'watch_hours', type: 'int', nullable: true })
+  watchHours: number | null;
 }

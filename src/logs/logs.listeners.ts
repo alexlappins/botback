@@ -15,6 +15,7 @@ import {
   TextChannel,
 } from 'discord.js';
 
+import { GuildStorageService } from '../common/storage/guild-storage.service';
 import { SecurityBridge } from '../common/security-bridge.service';
 import { WebhookCache } from '../personalization/entities/webhook-cache.entity';
 import { LogEventsService } from './log-events.service';
@@ -46,6 +47,7 @@ export class LogsListeners {
     private readonly invites: InviteTrackerService,
     private readonly alerts: AlertsService,
     private readonly securityBridge: SecurityBridge,
+    private readonly guildStorage: GuildStorageService,
     @Inject(Client) private readonly client: Client,
     @InjectRepository(WebhookCache)
     private readonly webhookCacheRepo: Repository<WebhookCache>,
@@ -73,6 +75,24 @@ export class LogsListeners {
 
   private executorLine(tag: string | null | undefined): string {
     return tag ?? 'Unknown (author or unavailable)';
+  }
+
+  /**
+   * Server Stats counters rename themselves every few minutes to show live
+   * numbers — logging those renames spams the log channel. Anything belonging
+   * to the stats block (category + 4 counter channels) is excluded from
+   * channel logs entirely.
+   */
+  private isServerStatsChannel(guildId: string, channelId: string): boolean {
+    const stats = this.guildStorage.getConfig(guildId).serverStats;
+    if (!stats) return false;
+    return [
+      stats.categoryId,
+      stats.totalChannelId,
+      stats.humansChannelId,
+      stats.botsChannelId,
+      stats.onlineChannelId,
+    ].includes(channelId);
   }
 
   // ═══════════════ Preset 2: JOIN/LEAVE ═══════════════
@@ -431,6 +451,7 @@ export class LogsListeners {
   @On('channelCreate')
   async onChannelCreate(@Context() [ch]: ContextOf<'channelCreate'>) {
     if (!('guild' in ch) || !ch.guild) return;
+    if (this.isServerStatsChannel(ch.guild.id, ch.id)) return;
     const entry = await this.audit.lookup(ch.guild, AuditLogEvent.ChannelCreate, ch.id);
     await this.logEvents.create({
       guildId: ch.guild.id,
@@ -448,6 +469,7 @@ export class LogsListeners {
   @On('channelDelete')
   async onChannelDelete(@Context() [ch]: ContextOf<'channelDelete'>) {
     if (!('guild' in ch) || !ch.guild) return;
+    if (this.isServerStatsChannel(ch.guild.id, ch.id)) return;
     const guild = ch.guild;
     this.msgCache.forget(ch.id);
     const entry = await this.audit.lookup(guild, AuditLogEvent.ChannelDelete, ch.id);
@@ -469,6 +491,8 @@ export class LogsListeners {
   @On('channelUpdate')
   async onChannelUpdate(@Context() [oldCh, newCh]: ContextOf<'channelUpdate'>) {
     if (!('guild' in newCh) || !newCh.guild) return;
+    // Server Stats counters rename themselves constantly — never log them.
+    if (this.isServerStatsChannel(newCh.guild.id, newCh.id)) return;
     const guild = newCh.guild;
     const oldG = oldCh as GuildChannel;
     const newG = newCh as GuildChannel;
@@ -496,6 +520,9 @@ export class LogsListeners {
     if (!diffs.length) return;
 
     const entry = await this.audit.lookup(guild, AuditLogEvent.ChannelUpdate, newCh.id);
+    // Our own bot edits channels too (stats, quarantine overrides, panic
+    // slowmode, snapshot restore) — logging our own housekeeping is noise.
+    if (entry?.executor?.id === this.client.user?.id) return;
     const embed = this.baseEmbed(0xfee75c, 'Channel updated').addFields(
       { name: 'Channel', value: `${newG.name} (${newCh})`, inline: true },
       { name: 'Updated by', value: this.executorLine(entry?.executor?.tag), inline: true },

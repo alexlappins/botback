@@ -110,7 +110,24 @@ export class AlertsService {
 
   async getSettings(guildId: string): Promise<AlertSettings> {
     let row = await this.settingsRepo.findOne({ where: { guildId } });
-    if (!row) row = this.settingsRepo.create({ guildId });
+    // repo.create() does NOT apply column defaults (they're DB-side, applied
+    // on INSERT) — spell them out or `recipients.map` crashes on fresh guilds.
+    if (!row) {
+      row = this.settingsRepo.create({
+        guildId,
+        enabled: false,
+        recipients: [],
+        d1Enabled: true,
+        d2Enabled: true,
+        d3Enabled: true,
+        d4Enabled: true,
+        d5Enabled: true,
+        d6Enabled: true,
+        d7Enabled: true,
+        d8Enabled: true,
+        d9Enabled: true,
+      });
+    }
     return row;
   }
 

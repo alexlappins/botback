@@ -12,7 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 
-import { StreamNotificationsService } from './stream-notifications.service';
+import { TwitchEventDispatcher } from './twitch-event-dispatcher.service';
 
 /**
  * Twitch EventSub webhook receiver.
@@ -48,7 +48,7 @@ export class TwitchWebhookController {
 
   constructor(
     private readonly config: ConfigService,
-    private readonly notifier: StreamNotificationsService,
+    private readonly dispatcher: TwitchEventDispatcher,
   ) {}
 
   @Post()
@@ -124,33 +124,15 @@ export class TwitchWebhookController {
     }
 
     if (messageType === 'notification') {
-      const subType = payload.subscription?.type;
-      const event = payload.event ?? {};
-      try {
-        if (subType === 'stream.online') {
-          await this.notifier.onStreamOnline({
-            broadcasterUserId: String(event.broadcaster_user_id ?? ''),
-            broadcasterUserLogin: String(event.broadcaster_user_login ?? ''),
-            broadcasterUserName: String(event.broadcaster_user_name ?? ''),
-            streamId: String(event.id ?? ''),
-            streamType: String(event.type ?? 'live'),
-            startedAt: String(event.started_at ?? new Date().toISOString()),
-          });
-        } else if (subType === 'stream.offline') {
-          await this.notifier.onStreamOffline({
-            broadcasterUserId: String(event.broadcaster_user_id ?? ''),
-          });
-        } else {
-          this.logger.debug(`Unhandled subscription type: ${subType}`);
-        }
-      } catch (e) {
-        // Re-throwing would make Twitch retry. We've already deduped the
-        // message id, so a retry would be silently dropped. Log + 200.
-        this.logger.error(
-          `Notification handler crashed for ${subType}: ${(e as Error).message}`,
-          (e as Error).stack,
-        );
-      }
+      // TZ-A §0.1: one intake → dispatcher → all subscribers. Handlers are
+      // isolated inside the dispatcher; errors are logged, never re-thrown
+      // (a retry would be dropped by the dedup ring anyway).
+      const subType = payload.subscription?.type ?? 'unknown';
+      await this.dispatcher.dispatch(
+        subType,
+        payload.event ?? {},
+        payload.subscription ?? { id: '', type: subType, condition: {} },
+      );
       return;
     }
 
